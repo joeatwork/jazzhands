@@ -53,7 +53,52 @@ struct sensors {
   int16_t mag_x;
   int16_t mag_y;
   int16_t mag_z;
+  int flex_00; // TODO RENAME TO FINGER?
+  int flex_01;
+  int flex_02;
+  int flex_03;
+  int flex_04;
 };
+
+struct serial_reader {
+  byte rgb[3];
+  size_t offset;
+};
+
+static void serial_read_leds() {
+  static struct serial_reader reader;
+  bool read_complete = false;
+  byte r;
+  byte g;
+  byte b;
+
+  while (0 < Serial.available()) {
+    byte next_byte = Serial.read();
+    read_complete = false;
+
+    if ('\n' == next_byte) {
+      if (3 == reader.offset) {
+	r = reader.rgb[0];
+	g = reader.rgb[1];
+	b = reader.rgb[2];
+	read_complete = true;
+      }
+
+      reader.offset = 0;
+    } else {
+      if (3 == reader.offset) {
+	reader.offset = 0;
+      }
+
+      reader.rgb[reader.offset] = next_byte;
+      reader.offset++;
+    }
+  }
+
+  if (read_complete) {
+    led_set_rgb(r, g, b);
+  }
+}
 
 static void mpu6000_write_register(const char addr, const char data) {
   digitalWrite(PIN_MPU6000_CS, LOW);
@@ -150,7 +195,63 @@ void hmc5883_read_sensors(struct sensors *const sensors) {
   Wire.endTransmission();
 }
 
+void flex_sensors_init() {
+  // Enable internal pull ups as for simple voltage dividers
+  digitalWrite(A0, HIGH);
+  digitalWrite(A1, HIGH);
+  digitalWrite(A2, HIGH);
+  digitalWrite(A3, HIGH);
+}
+
+void flex_read_sensors(struct sensors *const out) {
+  out->flex_00 = analogRead(A0);
+  out->flex_01 = analogRead(A1);
+  out->flex_02 = analogRead(A2);
+  out->flex_03 = analogRead(A3);
+  out->flex_04 = analogRead(A4);
+}
+
+// MinM docs, including default addr and command language
+// at http://thingm.com/fileadmin/thingm/downloads/BlinkM_datasheet.pdf
+static const int MINM_ADDR = 0x09;
+
+void led_set_rgb(byte r, byte g, byte b) {
+  Wire.beginTransmission(MINM_ADDR);
+  Wire.write('n'); // set RGB
+  Wire.write(r);
+  Wire.write(g);
+  Wire.write(b);
+  Wire.endTransmission();
+}
+
+void led_init() {
+  Wire.beginTransmission(MINM_ADDR);
+  Wire.write('o'); // stop script
+  Wire.endTransmission();
+  led_set_rgb(0, 0, 0);
+}
+
 static void serial_write_sensors(struct sensors sensors) {
+  Serial.print("F0 Ring:");
+  Serial.print(sensors.flex_00);
+  Serial.print(",");
+
+  Serial.print("F1 Index:");
+  Serial.print(sensors.flex_01);
+  Serial.print(",");
+
+  Serial.print("F2 Middle:");
+  Serial.print(sensors.flex_02);
+  Serial.print(",");
+
+  Serial.print("F3 Thumb:");
+  Serial.print(sensors.flex_03);
+  Serial.print(",");
+
+  Serial.print("F4:");
+  Serial.print(sensors.flex_04);
+  Serial.print("\n\r");
+
   Serial.print("AX:");
   Serial.print(sensors.accel_x);
   Serial.print(",");
@@ -161,7 +262,7 @@ static void serial_write_sensors(struct sensors sensors) {
 
   Serial.print("AZ:");
   Serial.print(sensors.accel_z);
-  Serial.print(",");
+  Serial.print("\n\r");
 
   Serial.print("GX:");
   Serial.print(sensors.gyro_x);
@@ -173,16 +274,17 @@ static void serial_write_sensors(struct sensors sensors) {
 
   Serial.print("GZ:");
   Serial.print(sensors.gyro_z);
-  Serial.print(",");
   Serial.print("\n\r");
 
   Serial.print("MX:");
   Serial.print(sensors.mag_x);
+  Serial.print(",");
   Serial.print("MY:");
   Serial.print(sensors.mag_y);
+  Serial.print(",");
   Serial.print("MZ:");
   Serial.print(sensors.mag_z);
-
+  Serial.print("\n\r");
   Serial.flush();
 }
 
@@ -192,17 +294,21 @@ void setup()
   delay(10);
   mpu6000_init();
   hmc5883_init();
+  flex_sensors_init();
+  led_init();
+
   Serial.begin(115200);
-  pinMode(PIN_BLUE_LED, OUTPUT);
 }
 
 void loop()
 {
   struct sensors sensors;
-  digitalWrite(PIN_BLUE_LED, HIGH);   // sets the LED on
+
   mpu6000_read_sensors(&sensors);
   hmc5883_read_sensors(&sensors);
+  flex_read_sensors(&sensors);
   serial_write_sensors(sensors);
+
+  serial_read_leds();
   delay(1000);
-  digitalWrite(PIN_BLUE_LED, LOW);    // sets the LED off
 }

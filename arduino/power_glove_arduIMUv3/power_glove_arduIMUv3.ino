@@ -232,59 +232,41 @@ void led_init() {
 }
 
 static void serial_write_sensors(struct sensors sensors) {
-  Serial.print("F0 Ring:");
-  Serial.print(sensors.flex_00);
+  Serial.print("F:");
+  Serial.print(sensors.flex_03); // Thumb
   Serial.print(",");
-
-  Serial.print("F1 Index:");
-  Serial.print(sensors.flex_01);
+  Serial.print(sensors.flex_01); // Index
   Serial.print(",");
-
-  Serial.print("F2 Middle:");
-  Serial.print(sensors.flex_02);
+  Serial.print(sensors.flex_02); // Middle
   Serial.print(",");
-
-  Serial.print("F3 Thumb:");
-  Serial.print(sensors.flex_03);
+  Serial.print(sensors.flex_00); // Ring
   Serial.print(",");
+  Serial.print(sensors.flex_04); // Pinky
+  Serial.print("\n");
 
-  Serial.print("F4:");
-  Serial.print(sensors.flex_04);
-  Serial.print("\n\r");
-
-  Serial.print("AX:");
-  Serial.print(sensors.accel_x);
+  Serial.print("A:");
+  Serial.print(sensors.accel_x); // x
   Serial.print(",");
-
-  Serial.print("AY:");
-  Serial.print(sensors.accel_y);
+  Serial.print(sensors.accel_y); // y
   Serial.print(",");
+  Serial.print(sensors.accel_z); // z
+  Serial.print("\n");
 
-  Serial.print("AZ:");
-  Serial.print(sensors.accel_z);
-  Serial.print("\n\r");
-
-  Serial.print("GX:");
-  Serial.print(sensors.gyro_x);
+  Serial.print("G:");
+  Serial.print(sensors.gyro_x); // x
   Serial.print(",");
-
-  Serial.print("GY:");
-  Serial.print(sensors.gyro_y);
+  Serial.print(sensors.gyro_y); // y
   Serial.print(",");
+  Serial.print(sensors.gyro_z); // x
+  Serial.print("\n");
 
-  Serial.print("GZ:");
-  Serial.print(sensors.gyro_z);
-  Serial.print("\n\r");
-
-  Serial.print("MX:");
-  Serial.print(sensors.mag_x);
+  Serial.print("M:");
+  Serial.print(sensors.mag_x); // x
   Serial.print(",");
-  Serial.print("MY:");
-  Serial.print(sensors.mag_y);
+  Serial.print(sensors.mag_y); // y
   Serial.print(",");
-  Serial.print("MZ:");
-  Serial.print(sensors.mag_z);
-  Serial.print("\n\r");
+  Serial.print(sensors.mag_z); // z
+  Serial.print("\n");
   Serial.flush();
 }
 
@@ -307,8 +289,7 @@ void loop()
   mpu6000_read_sensors(&sensors);
   hmc5883_read_sensors(&sensors);
   flex_read_sensors(&sensors);
+ 
   serial_write_sensors(sensors);
-
   serial_read_leds();
-  delay(1000);
 }

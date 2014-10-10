@@ -282,14 +282,23 @@ void setup()
   Serial.begin(115200);
 }
 
+static const int SEND_RATE_MILLIS = 10;
 void loop()
 {
+  static unsigned long prev_time = 0;
   struct sensors sensors;
+
+  serial_read_leds();
 
   mpu6000_read_sensors(&sensors);
   hmc5883_read_sensors(&sensors);
   flex_read_sensors(&sensors);
- 
-  serial_write_sensors(sensors);
-  serial_read_leds();
+
+  unsigned long current_time = millis();
+  unsigned long delta_time = current_time - prev_time;
+
+  if (delta_time > SEND_RATE_MILLIS) {
+    serial_write_sensors(sensors);
+    prev_time = current_time;
+  }
 }

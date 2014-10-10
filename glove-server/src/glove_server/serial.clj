@@ -2,20 +2,17 @@
   (:require [serial-port :as serial]
             [clojure.core.async :refer [chan close! go go-loop <! >! >!! <!! thread]]))
 
+
 (defn read-from-port [port from-device-chan]
   (thread
    (serial/on-byte port #(>!! from-device-chan %))))
 
 (defn write-to-port [port to-device-chan]
   (go-loop []
-           (println "Ready to write")
            (let [bytes (<! to-device-chan)]
-             (if (nil? bytes)
-               (println "Write channel is closed")
-               (do
-                 (println "Writing")
-                 (serial/write port bytes)
-                 (recur))))))
+             (when-not (nil? bytes)
+               (serial/write port bytes)
+               (recur)))))
 
 (defn connect-device [device-name]
   "Connects to a serial port and begins to process the serial input.
@@ -54,8 +51,17 @@
                 (recur (conj s next-char) (dec line-length-left)))))
     lines-out))
 
-(defn write-to-device
-  "Writes a seq of bytes to the device"
-  [{:keys [to-device]} bytes]
-  (doseq [one-byte bytes]
-    (>!! to-device one-byte)))
+(defn write-bytes-channel
+  "returns a channel that writes byte arrays to device."
+  [{:keys [to-device]}]
+  to-device)
+
+(comment
+  (use 'glove-server.serial)
+  (require `[clojure.core.async :as async])
+  (def device (connect-device "/dev/tty.usbserial-FTE3RR3T"))
+  (def device-read (read-lines-channel device))
+  (def device-write (write-bytes-channel device))
+  (async/<!! device-read)
+  (async/>!! write-chan (byte-array [127 127 127 10]))
+)

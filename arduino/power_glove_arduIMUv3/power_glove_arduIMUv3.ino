@@ -76,6 +76,7 @@ static void serial_read_leds() {
     byte next_byte = Serial.read();
     read_complete = false;
 
+    // TODO BUG. We can't write value of '\n' == 10 to any channel with this scheme.
     if ('\n' == next_byte) {
       if (3 == reader.offset) {
 	r = reader.rgb[0];

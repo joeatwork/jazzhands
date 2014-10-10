@@ -8,10 +8,14 @@
 
 (defn write-to-port [port to-device-chan]
   (go-loop []
-           (let [byte (<! to-device-chan)]
-             (when (nil? byte)
-               (serial/write port)
-               (recur)))))
+           (println "Ready to write")
+           (let [bytes (<! to-device-chan)]
+             (if (nil? bytes)
+               (println "Write channel is closed")
+               (do
+                 (println "Writing")
+                 (serial/write port bytes)
+                 (recur))))))
 
 (defn connect-device [device-name]
   "Connects to a serial port and begins to process the serial input.
@@ -28,10 +32,30 @@
   (close! to-device)
   (close! from-device))
 
-(defn print-line [{:keys [from-device]}]
-  (loop [s [] limit 70]
-    (let [char (char (<!! from-device))]
-      (if (or (= char \newline) (= limit 0))
-        (println (apply str s))
-        (recur (conj s char) (dec limit))))))
+(def ^:const line-max-length 70)
 
+(defn read-lines-channel
+  "returns a channel of newline-separated lines from the device"
+  [{:keys [from-device]}]
+  (let [lines-out (chan)]
+    (go-loop [s [] line-length-left line-max-length]
+             (let [next-char (char (<! from-device))]
+               (cond
+
+                (nil? next-char)
+                (do (>! lines-out (apply str s))
+                    (close! lines-out))
+
+                (or (= next-char \newline) (= line-length-left 0))
+                (do (>! lines-out (apply str s))
+                    (recur [] line-max-length))
+
+                :else
+                (recur (conj s next-char) (dec line-length-left)))))
+    lines-out))
+
+(defn write-to-device
+  "Writes a seq of bytes to the device"
+  [{:keys [to-device]} bytes]
+  (doseq [one-byte bytes]
+    (>!! to-device one-byte)))

@@ -2,7 +2,6 @@
   (:require [serial-port :as serial]
             [clojure.core.async :refer [chan close! go go-loop <! >! >!! <!! thread]]))
 
-
 (defn read-from-port [port from-device-chan]
   (thread
    (serial/on-byte port #(>!! from-device-chan %))))

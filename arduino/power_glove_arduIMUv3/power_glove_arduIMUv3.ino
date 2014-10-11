@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
+#include "MadgwickAHRS.h"
+
+static const float RADIANS_PER_DEGREE = 0.0174532925f;
 
 /* MPU6000 Registers and settings, from
    http://invensense.com/mems/gyro/documents/RM-MPU-6000A.pdf */
@@ -271,6 +274,38 @@ static void serial_write_sensors(struct sensors sensors) {
   Serial.flush();
 }
 
+static void serial_write_quaternion(struct MadgwickState state) {
+  Serial.print("Q:");
+  Serial.print(state.q0);
+  Serial.print(",");
+  Serial.print(state.q1);
+  Serial.print(",");
+  Serial.print(state.q2);
+  Serial.print(",");
+  Serial.print(state.q3);
+  Serial.print("\n");
+}
+
+void madgwick_update(struct MadgwickState *state, struct sensors *sensors) {
+  static unsigned long previous_update_time = 0;
+  unsigned long current_time = millis();
+  if (0 == previous_update_time) {
+    previous_update_time = current_time;
+    return;
+  }
+
+  float gxRad = sensors->gyro_x * RADIANS_PER_DEGREE;
+  float gyRad = sensors->gyro_y * RADIANS_PER_DEGREE;
+  float gzRad = sensors->gyro_z * RADIANS_PER_DEGREE;
+
+  unsigned long delta_time = current_time - previous_update_time;
+  state->sampleFreq = 1000.0f / delta_time;
+  MadgwickAHRSupdate(state,
+		     gxRad, gyRad, gzRad,
+		     sensors->accel_x, sensors->accel_y, sensors->accel_z,
+		     sensors->mag_x, sensors->mag_y, sensors->mag_z);
+}
+
 void setup()
 {
   Wire.begin();
@@ -283,23 +318,34 @@ void setup()
   Serial.begin(115200);
 }
 
-static const int SEND_RATE_MILLIS = 10;
+static const unsigned int SEND_RATE_MILLIS = 10;
 void loop()
 {
-  static unsigned long prev_time = 0;
+  static unsigned long last_send_time = 0;
+  static struct MadgwickState state = {
+    100, // sampleFreq
+    0.1f, // beta
+    1.0f, // q0
+    0.0f, // q1
+    0.0f, // q2
+    0.0f  // q3
+  };
+
   struct sensors sensors;
 
   serial_read_leds();
 
   mpu6000_read_sensors(&sensors);
   hmc5883_read_sensors(&sensors);
+  madgwick_update(&state, &sensors);
+
   flex_read_sensors(&sensors);
 
   unsigned long current_time = millis();
-  unsigned long delta_time = current_time - prev_time;
-
+  unsigned long delta_time = current_time - last_send_time;
   if (delta_time > SEND_RATE_MILLIS) {
     serial_write_sensors(sensors);
-    prev_time = current_time;
+    serial_write_quaternion(state);
+    last_send_time = current_time;
   }
 }

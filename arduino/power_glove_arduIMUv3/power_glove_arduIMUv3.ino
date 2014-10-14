@@ -56,11 +56,11 @@ struct sensors {
   int16_t mag_x;
   int16_t mag_y;
   int16_t mag_z;
-  int flex_00; // TODO RENAME TO FINGER?
-  int flex_01;
-  int flex_02;
-  int flex_03;
-  int flex_04;
+  int16_t flex_00; // TODO RENAME TO FINGER?
+  int16_t flex_01;
+  int16_t flex_02;
+  int16_t flex_03;
+  int16_t flex_04;
 };
 
 struct serial_reader {
@@ -235,55 +235,67 @@ void led_init() {
   led_set_rgb(0, 0, 0);
 }
 
-static void serial_write_sensors(struct sensors sensors) {
-  Serial.print("F:");
-  Serial.print(sensors.flex_03); // Thumb
-  Serial.print(",");
-  Serial.print(sensors.flex_01); // Index
-  Serial.print(",");
-  Serial.print(sensors.flex_02); // Middle
-  Serial.print(",");
-  Serial.print(sensors.flex_00); // Ring
-  Serial.print(",");
-  Serial.print(sensors.flex_04); // Pinky
-  Serial.print("\n");
-
-  Serial.print("A:");
-  Serial.print(sensors.accel_x); // x
-  Serial.print(",");
-  Serial.print(sensors.accel_y); // y
-  Serial.print(",");
-  Serial.print(sensors.accel_z); // z
-  Serial.print("\n");
-
-  Serial.print("G:");
-  Serial.print(sensors.gyro_x); // x
-  Serial.print(",");
-  Serial.print(sensors.gyro_y); // y
-  Serial.print(",");
-  Serial.print(sensors.gyro_z); // x
-  Serial.print("\n");
-
-  Serial.print("M:");
-  Serial.print(sensors.mag_x); // x
-  Serial.print(",");
-  Serial.print(sensors.mag_y); // y
-  Serial.print(",");
-  Serial.print(sensors.mag_z); // z
-  Serial.print("\n");
-  Serial.flush();
+static void serial_write_int16(int16_t val) {
+  byte high = (val >> 8) & 0xFF;
+  byte low = val & 0xFF;
+  Serial.write(high);
+  Serial.write(low);
 }
 
+// Writes 36 bytes to serial port
+static void serial_write_sensors(struct sensors sensors) {
+  Serial.write('H'); // 0
+  serial_write_int16(sensors.flex_03); // 1 Thumb
+  serial_write_int16(sensors.flex_01); // 3 Index
+  serial_write_int16(sensors.flex_02); // 5 Middle
+  serial_write_int16(sensors.flex_00); // 7 Ring
+  serial_write_int16(sensors.flex_04); // 9 Pinky
+  Serial.write('\n'); // 11
+
+  // 12 bytes of Finger data
+
+  Serial.write('A'); // 0
+  serial_write_int16(sensors.accel_x); // 1 x
+  serial_write_int16(sensors.accel_y); // 3 y
+  serial_write_int16(sensors.accel_z); // 5 z
+  Serial.write('\n'); // 7
+
+  // 8 bytes of Accelerometer data
+
+  Serial.write('G');
+  serial_write_int16(sensors.gyro_x); // x
+  serial_write_int16(sensors.gyro_y); // y
+  serial_write_int16(sensors.gyro_z); // x
+  Serial.write('\n');
+
+  // 8 bytes of gyro data
+
+  Serial.write('M');
+  serial_write_int16(sensors.mag_x); // x
+  serial_write_int16(sensors.mag_y); // y
+  serial_write_int16(sensors.mag_z); // z
+  Serial.write('\n');
+  Serial.flush();
+
+  // 8 bytes of compass data
+}
+
+static const float INT16_SCALE = 32767;
+// Writes 10 bytes to serial port
 static void serial_write_quaternion(struct MadgwickState state) {
-  Serial.print("Q:");
-  Serial.print(state.q0);
-  Serial.print(",");
-  Serial.print(state.q1);
-  Serial.print(",");
-  Serial.print(state.q2);
-  Serial.print(",");
-  Serial.print(state.q3);
-  Serial.print("\n");
+  int16_t scaled_q0 = (int16_t) (state.q0 * INT16_SCALE);
+  int16_t scaled_q1 = (int16_t) (state.q1 * INT16_SCALE);
+  int16_t scaled_q2 = (int16_t) (state.q2 * INT16_SCALE);
+  int16_t scaled_q3 = (int16_t) (state.q3 * INT16_SCALE);
+
+  Serial.write('Q'); // 0
+  serial_write_int16(scaled_q0); // 1
+  serial_write_int16(scaled_q1); // 3
+  serial_write_int16(scaled_q2); // 5
+  serial_write_int16(scaled_q3); // 7
+  Serial.write('\n'); // 9
+
+  // 10 bytes total
 }
 
 void madgwick_update(struct MadgwickState *state, struct sensors *sensors) {
@@ -344,8 +356,8 @@ void loop()
   unsigned long current_time = millis();
   unsigned long delta_time = current_time - last_send_time;
   if (delta_time > SEND_RATE_MILLIS) {
-    serial_write_sensors(sensors);
-    serial_write_quaternion(state);
+    serial_write_sensors(sensors);  // 36 bytes
+    serial_write_quaternion(state); // 10 bytes
     last_send_time = current_time;
   }
 }

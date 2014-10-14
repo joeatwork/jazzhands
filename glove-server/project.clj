@@ -7,4 +7,4 @@
                  [org.clojure/core.async "0.1.346.0-17112a-alpha"]
                  [overtone "0.9.1"]
                  [serial-port "1.1.2"]]
-  :jvm-opts ^:replace [])
+  :jvm-opts ^:replace ["-XX:-OmitStackTraceInFastThrow"])

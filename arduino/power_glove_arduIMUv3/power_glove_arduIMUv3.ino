@@ -63,45 +63,55 @@ struct sensors {
   int16_t flex_04;
 };
 
-struct serial_reader {
-  byte rgb[3];
-  size_t offset;
+enum request_type_t {
+  REQUEST_TYPE_NONE,
+  REQUEST_TYPE_LED,
+  REQUEST_TYPE_NUMBER
 };
 
-static void serial_read_leds() {
-  static struct serial_reader reader;
-  bool read_complete = false;
-  byte r;
-  byte g;
-  byte b;
+struct client_request {
+  request_type_t type;
+  union {
+    struct {
+      byte r;
+      byte g;
+      byte b;
+    };
+    int16_t command_number;
+  };
+};
 
-  while (0 < Serial.available()) {
-    byte next_byte = Serial.read();
-    read_complete = false;
+static struct client_request serial_read_request() {
+  struct client_request ret;
+  ret.type = REQUEST_TYPE_NONE;
 
-    // TODO BUG. We can't write value of '\n' == 10 to any channel with this scheme.
-    if ('\n' == next_byte) {
-      if (3 == reader.offset) {
-	r = reader.rgb[0];
-	g = reader.rgb[1];
-	b = reader.rgb[2];
-	read_complete = true;
-      }
+  // ALL INBOUND MESSAGES are four bytes long, so serial number messages should pad
+  // with zero and a newline
 
-      reader.offset = 0;
-    } else {
-      if (3 == reader.offset) {
-	reader.offset = 0;
-      }
-
-      reader.rgb[reader.offset] = next_byte;
-      reader.offset++;
+  while (5 <= Serial.available()) {
+    byte header = Serial.read();
+    switch (header) {
+    case 'N': {
+      ret.type = REQUEST_TYPE_NUMBER;
+      byte high_byte = Serial.read();
+      byte low_byte = Serial.read();
+      Serial.read(); // Drop padding on the floor
+      Serial.read(); // Drop newline on the floor
+      ret.command_number = (0xFF00 & (high_byte << 8)) | (0xFF & (low_byte));
+    }; break;
+    case 'L': {
+      ret.type = REQUEST_TYPE_LED;
+      ret.r = Serial.read();
+      ret.g = Serial.read();
+      ret.b = Serial.read();
+      Serial.read(); // Drop newline on the floor
+    }; break;
+    default:
+      ret.type = REQUEST_TYPE_NONE; // !! Out of sync! Skip on ahead
     }
   }
 
-  if (read_complete) {
-    led_set_rgb(r, g, b);
-  }
+  return ret;
 }
 
 static void mpu6000_write_register(const char addr, const char data) {
@@ -242,6 +252,15 @@ static void serial_write_int16(int16_t val) {
   Serial.write(low);
 }
 
+// Write 4 bytes
+static void serial_write_number(int16_t number) {
+  Serial.write('N'); // 0
+  serial_write_int16(number); // 1
+  Serial.write('\n'); // 3
+
+  // 4 bytes of serial number
+}
+
 // Writes 36 bytes to serial port
 static void serial_write_sensors(struct sensors sensors) {
   Serial.write('H'); // 0
@@ -281,6 +300,7 @@ static void serial_write_sensors(struct sensors sensors) {
 }
 
 static const float INT16_SCALE = 32767;
+
 // Writes 10 bytes to serial port
 static void serial_write_quaternion(struct MadgwickState state) {
   int16_t scaled_q0 = (int16_t) (state.q0 * INT16_SCALE);
@@ -318,8 +338,7 @@ void madgwick_update(struct MadgwickState *state, struct sensors *sensors) {
 		     sensors->mag_x, sensors->mag_y, sensors->mag_z);
 }
 
-void setup()
-{
+void setup() {
   Wire.begin();
   delay(10);
   mpu6000_init();
@@ -331,8 +350,7 @@ void setup()
 }
 
 static const unsigned int SEND_RATE_MILLIS = 10;
-void loop()
-{
+void loop() {
   static unsigned long last_send_time = 0;
   static struct MadgwickState state = {
     100, // sampleFreq
@@ -345,19 +363,25 @@ void loop()
 
   struct sensors sensors;
 
-  serial_read_leds();
-
   mpu6000_read_sensors(&sensors);
   hmc5883_read_sensors(&sensors);
   madgwick_update(&state, &sensors);
 
-  flex_read_sensors(&sensors);
-
-  unsigned long current_time = millis();
-  unsigned long delta_time = current_time - last_send_time;
-  if (delta_time > SEND_RATE_MILLIS) {
-    serial_write_sensors(sensors);  // 36 bytes
+  client_request request = serial_read_request();
+  switch (request.type) {
+  case REQUEST_TYPE_NUMBER:
+    flex_read_sensors(&sensors);
+    serial_write_number(request.command_number); // 4 bytes
+    serial_write_sensors(sensors); // 36 bytes
     serial_write_quaternion(state); // 10 bytes
-    last_send_time = current_time;
+    // total write of 50 bytes
+    break;
+  case REQUEST_TYPE_LED:
+    led_set_rgb(request.r, request.g, request.b);
+    break;
+  case REQUEST_TYPE_NONE:
+    break;
+  default:
+    ; // !! ERROR! WTF!
   }
 }

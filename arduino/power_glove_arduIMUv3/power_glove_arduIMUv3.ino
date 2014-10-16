@@ -87,8 +87,7 @@ static struct client_request serial_read_request() {
 
   // ALL INBOUND MESSAGES are four bytes long, so serial number messages should pad
   // with zero and a newline
-
-  while (5 >= Serial.available()) {
+  while (5 <= Serial.available()) {
     byte header = Serial.read();
     switch (header) {
     case 'N': {

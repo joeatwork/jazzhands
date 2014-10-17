@@ -33,7 +33,7 @@
        :accel (read-16-bit-vector byte-buffer 17 3)
        :gyro (read-16-bit-vector byte-buffer 25 3)
        :mag (read-16-bit-vector byte-buffer 33 3)
-       :quaternion (map qscale (read-16-bit-vector byte-buffer 41 4))})))
+       :quaternion (vec (map qscale (read-16-bit-vector byte-buffer 41 4)))})))
 
 (defn connect-device [device-name]
   "Connects to a serial port and begins to process the serial input.
@@ -69,10 +69,13 @@
 (comment
   (loop [num 1]
     (write-series-number device 1)
-    (let [{accel :accel} (read-telemetry device)
-          accel-z (accel 2)]
-      (println "accel-z\t" accel-z)
-      (Thread/sleep 100)
+    (let [{q :quaternion} (read-telemetry device)
+          {:keys [heading attitude bank]} (quaternion->euler q)
+          attitude-in-pi (/ attitude Math/PI)
+          attitude-freq-off (* 100 attitude-in-pi)
+          use-freq (+ 220 attitude-freq-off)]
+      (ctl simple-sin :freq use-freq)
+      (Thread/sleep 500)
       (recur (inc num))))
 )
 
@@ -80,7 +83,7 @@
   (use 'glove-server.serial :reload)
   (require '[clojure.core.async :as async])
   (def device (connect-device "/dev/tty.usbserial-FTE3RR3T"))
-  (write-series-number 10)
+  (write-series-number device 10)
   (read-channel device)
   (write-leds 0xFF 0 0)
   (close-device device)

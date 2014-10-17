@@ -83,8 +83,7 @@ public class GloveSerialConnection {
 		    totalBytesSkipped += 1;
 		} else {
 		    // If We're already aligned in the buffer, slurp as fast as we can
-		    int bufferSpace = mReadOffset - mReadBuffer.length;
-		    assert bufferSpace > 0;
+		    int bufferSpace = mReadBuffer.length - mReadOffset;
 
 		    final int newBytesRead = mInStream.read(mReadBuffer, mReadOffset, bufferSpace);
 		    mReadOffset = mReadOffset + newBytesRead;
@@ -97,11 +96,6 @@ public class GloveSerialConnection {
 		    totalBytesRead += newBytesRead;
 		}
 	    }
-
-	    System.out.println("Read loop complete." + 
-			       " Bytes Skipped: " + totalBytesSkipped +
-			       " Bytes Read: " + totalBytesRead +
-			       " Messages Sent: " + totalMessagesSent);
 	}
 
 	private int mReadOffset;

@@ -28,7 +28,7 @@
         M (= (byte \M) (aget byte-buffer 32))
         Q (= (byte \Q) (aget byte-buffer 40))]
     (when (and N H A G M Q)
-      {:message (read-16-bit-int 1)
+      {:message (read-16-bit-int byte-buffer 1)
        :fingers (read-16-bit-vector byte-buffer 5 5)
        :accel (read-16-bit-vector byte-buffer 17 3)
        :gyro (read-16-bit-vector byte-buffer 25 3)
@@ -37,7 +37,7 @@
 
 (defn connect-device [device-name]
   "Connects to a serial port and begins to process the serial input.
-   Returns a device: {:in channel :out channel}"
+   Returns a device"
   (let [connection (GloveSerialConnection. device-name)]
     {:raw-connection connection}))
 
@@ -45,8 +45,8 @@
   "Close device"
   (.close raw-connection))
 
-(defn read-channel
-  "returns a channel of newline-separated lines from the device"
+(defn read-telemetry
+  "reads a telemetry message from the glove if it is available"
   [{:keys [^GloveSerialConnection raw-connection]}]
   (when-let [message-bytes (.message raw-connection)]
     (parse-message message-bytes)))
@@ -54,7 +54,7 @@
 (defn write-leds
   "returns a channel that writes byte arrays to device."
   [{:keys [^GloveSerialConnection raw-connection]} r g b]
-  (let [message (byte-array (map byte [\L r g b]))]
+  (let [message (byte-array (map byte [\L r g b \newline]))]
       (.write raw-connection message)))
 
 (defn write-series-number
@@ -62,7 +62,7 @@
   [{:keys [^GloveSerialConnection raw-connection]} series-num]
   (let [high-byte (.byteValue (bit-shift-right series-num 8))
         low-byte (.byteValue (bit-and series-num 0xFF))
-        message (byte-array [high-byte low-byte])]
+        message (byte-array (map byte [\N high-byte low-byte 0 \newline]))]
     (.write raw-connection message)))
 
 (comment

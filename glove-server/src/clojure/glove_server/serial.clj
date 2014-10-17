@@ -14,7 +14,7 @@
 
 (defn- read-16-bit-vector [^bytes byte-buffer start-offset count]
   (let [offsets (map #(+ start-offset (* 2 %)) (range count))]
-    (map #(read-16-bit-int byte-buffer %) offsets)))
+    (vec (map #(read-16-bit-int byte-buffer %) offsets))))
 
 (defn- qscale [x] (/ (double x) 32767.0))
 
@@ -64,6 +64,17 @@
         low-byte (.byteValue (bit-and series-num 0xFF))
         message (byte-array (map byte [\N high-byte low-byte 0 \newline]))]
     (.write raw-connection message)))
+
+
+(comment
+  (loop [num 1]
+    (write-series-number device 1)
+    (let [{accel :accel} (read-telemetry device)
+          accel-z (accel 2)]
+      (println "accel-z\t" accel-z)
+      (Thread/sleep 100)
+      (recur (inc num))))
+)
 
 (comment
   (use 'glove-server.serial :reload)

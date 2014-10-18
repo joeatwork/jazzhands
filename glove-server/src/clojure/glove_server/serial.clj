@@ -1,7 +1,6 @@
 (ns glove-server.serial
   (:require [clojure.string :as string]
             [clojure.pprint :as pprint]
-            [clojure.core.async :as async]
             [clojure.algo.monads :as monad])
   (:import (net.culturematic.glove GloveSerialConnection)))
 
@@ -75,7 +74,6 @@
           attitude-freq-off (* 100 attitude-in-pi)
           use-freq (+ 220 attitude-freq-off)]
       (ctl simple-sin :freq use-freq)
-      (Thread/sleep 500)
       (recur (inc num))))
 )
 

@@ -6,3 +6,7 @@
   {:heading (Math/atan2 (- (* 2 q2 q3) (* 2 q1 q4)) (+ (* 2 q1 q1) (* 2 q2 q2) -1))
    :attitude (Math/asin (+ (* 2 q2 q4) (* 2 q1 q3)))
    :bank (Math/atan2 (- (* 2 q3 q4) (* 2 q2 q2)) (+ (* 2 q1 q1) (* 2 q4 q4) -1))})
+
+(defn accel->euler [[accel-x accel-y accel-z]]
+  {:bank (Math/atan2 accel-y accel-z)
+   :attitude (Math/atan2 (- accel-x) (Math/sqrt (+ (* accel-y accel-y) (* accel-z accel-z))))})

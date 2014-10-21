@@ -3,6 +3,14 @@
 #include <Wire.h>
 #include "MadgwickAHRS.h"
 
+/* This file is essentially a deep reading of
+
+   https://github.com/SebMadgwick/ArduIMU-Gloves
+
+   with lots of shiny new bugs. Readers and potential users
+   are strongly encouraged to start with that code rather
+   than this. */
+
 static const float RADIANS_PER_DEGREE = 0.0174532925f;
 
 /* MPU6000 Registers and settings, from
@@ -85,7 +93,7 @@ static struct client_request serial_read_request() {
   struct client_request ret;
   ret.type = REQUEST_TYPE_NONE;
 
-  // ALL INBOUND MESSAGES are four bytes long, so serial number messages should pad
+  // ALL INBOUND MESSAGES are five bytes long, so serial number messages should pad
   // with zero and a newline
   while (5 <= Serial.available()) {
     byte header = Serial.read();
@@ -317,6 +325,9 @@ static void serial_write_quaternion(struct MadgwickState state) {
   // 10 bytes total
 }
 
+static const float GYRO_SENSITIVITY = 25.0f/41.0f;
+static const float ACCEL_SENSITIVITY = 125.0f/256.0f;
+
 void madgwick_update(struct MadgwickState *state, struct sensors *sensors) {
   static unsigned long previous_update_time = 0;
   unsigned long current_time = millis();
@@ -325,15 +336,19 @@ void madgwick_update(struct MadgwickState *state, struct sensors *sensors) {
     return;
   }
 
-  float gxRad = sensors->gyro_x * RADIANS_PER_DEGREE;
-  float gyRad = sensors->gyro_y * RADIANS_PER_DEGREE;
-  float gzRad = sensors->gyro_z * RADIANS_PER_DEGREE;
+  float gxRad = ((float) sensors->gyro_x) * RADIANS_PER_DEGREE * GYRO_SENSITIVITY;
+  float gyRad = ((float) sensors->gyro_y) * RADIANS_PER_DEGREE * GYRO_SENSITIVITY;
+  float gzRad = ((float) sensors->gyro_z) * RADIANS_PER_DEGREE * GYRO_SENSITIVITY;
+
+  float accelX = sensors->accel_x * ACCEL_SENSITIVITY;
+  float accelY = sensors->accel_y * ACCEL_SENSITIVITY;
+  float accelZ = sensors->accel_z * ACCEL_SENSITIVITY;
 
   unsigned long delta_time = current_time - previous_update_time;
   state->sampleFreq = 1000.0f / delta_time;
   MadgwickAHRSupdate(state,
 		     gxRad, gyRad, gzRad,
-		     sensors->accel_x, sensors->accel_y, sensors->accel_z,
+		     accelX, accelY, accelZ,
 		     sensors->mag_x, sensors->mag_y, sensors->mag_z);
 }
 

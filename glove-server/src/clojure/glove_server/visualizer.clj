@@ -22,9 +22,9 @@
     (serial/write-series-number device sequence-number)
     (quil/set-state! :sequence-number (inc sequence-number))
     (when-let [telemetry (serial/read-telemetry device)]
-      (let [{q :quaternion a :accel} telemetry
+      (let [{q :quaternion a :accel m :mag} telemetry
             {q-yaw :heading q-pitch :attitude q-roll :bank} (model/quaternion->euler q)
-            {a-pitch :attitude a-roll :bank} (model/accel->euler a)
+            {a-yaw :heading a-pitch :attitude a-roll :bank} (model/accel->mag->euler a m)
             quarter-width (/ (quil/width) 4)
             third-height (/ (quil/height) 3)
             line-length (/ quarter-width 3)]
@@ -37,6 +37,7 @@
         (draw-needle (* 2 quarter-width) third-height line-length q-pitch)
         (draw-needle (* 3 quarter-width) third-height line-length q-roll)
 
+        (draw-needle quarter-width (* 2 third-height) line-length a-yaw)
         (draw-needle (* 2 quarter-width) (* 2 third-height) line-length a-pitch)
         (draw-needle (* 3 quarter-width) (* 2 third-height) line-length a-roll)))))
 

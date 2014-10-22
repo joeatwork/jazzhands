@@ -11,4 +11,5 @@
                  [overtone "0.9.1"]
                  [serial-port "1.1.2"]
                  [incanter "1.5.5"]
-                 [quil "2.2.2"]])
+                 [quil "2.2.2"]]
+  :jvm-opts ^:replace [])

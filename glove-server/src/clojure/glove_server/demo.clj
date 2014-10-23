@@ -29,15 +29,16 @@
 (def notes [25 27 28 35 40 41 50])
 
 (defn ctl-dubstep [device synth]
-  (loop [msg-number 1]
-    (serial/write-series-number device msg-number)
-    (when-let [telemetry (serial/read-telemetry device)]
-      (let [{a :accel m :mag} telemetry
-            {:keys [bank attitude heading]} (model/accel->mag->euler a m)
-            wobs (int (* 10 (Math/abs bank)))
-            note-ix (mod (int (* 8 (Math/abs attitude))) (count notes))
-            note (notes note-ix)]
-        (println "msg" msg-number "wobs" wobs "note" note-ix "bank" bank "attitude" attitude "heading" heading)
-        (ctl synth :wobble wobs)
-        (ctl synth :note note)))
-    (recur (inc msg-number))))
+  (loop [msg-number 0]
+    (when-let [{saw-number :message :as telemetry} (serial/read-telemetry device)]
+      (if (<= saw-number msg-number)
+        (recur msg-number)
+        (let [{a :accel m :mag} telemetry
+              {:keys [bank attitude heading]} (model/accel->mag->euler a m)
+              wobs (int (* 10 (Math/abs bank)))
+              note-ix (mod (int (* 8 (Math/abs attitude))) (count notes))
+              note (notes note-ix)]
+          (println "msg" saw-number "wobs" wobs "note" note-ix "bank" bank "attitude" attitude "heading" heading)
+          (ctl synth :wobble wobs)
+          (ctl synth :note note)
+          (recur saw-number))))))

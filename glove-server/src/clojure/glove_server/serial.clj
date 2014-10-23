@@ -45,10 +45,18 @@
   (.close raw-connection))
 
 (defn read-telemetry
-  "reads a telemetry message from the glove if it is available"
-  [{:keys [^GloveSerialConnection raw-connection]}]
-  (when-let [message-bytes (.message raw-connection)]
-    (parse-message message-bytes)))
+  "reads a telemetry message from the glove if it is available.
+   If last-number is provided, will only return non-null for messages
+   with a sequence number larger than the one given."
+  ([device last-number]
+     (let [{message-number :message :as ret} (read-telemetry device)]
+       (when (or (> message-number last-number)
+                 (< message-number (- last-number 1000)))
+         ret)))
+
+  ([{:keys [^GloveSerialConnection raw-connection]}]
+      (when-let [message-bytes (.message raw-connection)]
+        (parse-message message-bytes))))
 
 (defn write-leds
   "returns a channel that writes byte arrays to device."
@@ -56,18 +64,8 @@
   (let [message (byte-array (map byte [\L r g b \newline]))]
       (.write raw-connection message)))
 
-(defn write-series-number
-  "returns a channel that writes byte arrays to device."
-  [{:keys [^GloveSerialConnection raw-connection]} series-num]
-  (let [high-byte (.byteValue (bit-shift-right series-num 8))
-        low-byte (.byteValue (bit-and series-num 0xFF))
-        message (byte-array (map byte [\N high-byte low-byte 0 \newline]))]
-    (.write raw-connection message)))
-
-
 (comment
   (loop [num 1]
-    (write-series-number device 1)
     (let [{q :quaternion} (read-telemetry device)
           {:keys [heading attitude bank]} (quaternion->euler q)
           attitude-in-pi (/ attitude Math/PI)
@@ -79,10 +77,11 @@
 
 (comment
   (use 'glove-server.serial :reload)
-  (require '[clojure.core.async :as async])
   (def device (connect-device "/dev/tty.usbserial-FTE3RR3T"))
-  (write-series-number device 10)
-  (read-channel device)
-  (write-leds 0xFF 0 0)
-  (close-device device)
+  (loop [last-number 0]
+    (if-let [telemetry (read-telemetry device)]
+      (do
+        (println telemetry)
+        (recur (:message telemetry)))
+      (recur last-number)))
 )

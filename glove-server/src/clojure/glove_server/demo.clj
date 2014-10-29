@@ -30,15 +30,22 @@
 
 (defn ctl-dubstep [device synth]
   (loop [msg-number 0]
-    (when-let [{saw-number :message :as telemetry} (serial/read-telemetry device)]
-      (if (<= saw-number msg-number)
-        (recur msg-number)
-        (let [{a :accel m :mag} telemetry
-              {:keys [bank attitude heading]} (model/accel->mag->euler a m)
-              wobs (int (* 10 (Math/abs bank)))
-              note-ix (mod (int (* 8 (Math/abs attitude))) (count notes))
-              note (notes note-ix)]
-          (println "msg" saw-number "wobs" wobs "note" note-ix "bank" bank "attitude" attitude "heading" heading)
-          (ctl synth :wobble wobs)
-          (ctl synth :note note)
-          (recur saw-number))))))
+    (if-let [{saw-number :message :as telemetry} (serial/read-telemetry device msg-number)]
+      (let [{a :accel m :mag} telemetry
+            {:keys [bank attitude heading]} (model/accel->mag->euler a m)
+            wobs (int (* 10 (Math/abs bank)))
+            note-ix (mod (int (* 8 (Math/abs attitude))) (count notes))
+            note (notes note-ix)]
+        (println "msg" saw-number "wobs" wobs "note" note-ix "bank" bank "attitude" attitude "heading" heading)
+        (ctl synth :wobble wobs)
+        (ctl synth :note note)
+        (recur saw-number))
+      (recur msg-number))))
+
+(defn dubstep-demo [device-name]
+  (let [device (serial/connect-device device-name)
+        synth (dubstep)]
+    (try
+      (ctl-dubstep device synth)
+      (finally (do (serial/close-device device)
+                   (kill synth))))))

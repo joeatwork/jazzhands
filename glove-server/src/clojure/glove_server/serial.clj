@@ -49,7 +49,7 @@
    If last-number is provided, will only return non-null for messages
    with a sequence number larger than the one given."
   ([device last-number]
-     (let [{message-number :message :as ret} (read-telemetry device)]
+     (when-let [{message-number :message :as ret} (read-telemetry device)]
        (when (or (> message-number last-number)
                  (< message-number (- last-number 1000)))
          ret)))

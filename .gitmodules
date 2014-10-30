@@ -1,0 +1,6 @@
+[submodule "vendor/chuck"]
+	path = vendor/chuck
+	url = https://github.com/ccrma/chuck
+[submodule "vendor/chugins"]
+	path = vendor/chugins
+	url = https://github.com/ccrma/chugins

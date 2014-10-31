@@ -73,39 +73,24 @@ struct sensors {
 
 enum request_type_t {
   REQUEST_TYPE_NONE,
-  REQUEST_TYPE_LED,
-  REQUEST_TYPE_NUMBER
+  REQUEST_TYPE_LED
 };
 
 struct client_request {
   request_type_t type;
-  union {
-    struct {
-      byte r;
-      byte g;
-      byte b;
-    };
-    int16_t command_number;
-  };
+  byte r;
+  byte g;
+  byte b;
 };
 
 static struct client_request serial_read_request() {
   struct client_request ret;
   ret.type = REQUEST_TYPE_NONE;
 
-  // ALL INBOUND MESSAGES are five bytes long, so serial number messages should pad
-  // with zero and a newline
+  // ALL INBOUND MESSAGES are five bytes long
   while (5 <= Serial.available()) {
     byte header = Serial.read();
     switch (header) {
-    case 'N': {
-      ret.type = REQUEST_TYPE_NUMBER;
-      byte high_byte = Serial.read();
-      byte low_byte = Serial.read();
-      Serial.read(); // Drop padding on the floor
-      Serial.read(); // Drop newline on the floor
-      ret.command_number = (0xFF00 & (high_byte << 8)) | (0xFF & (low_byte));
-    }; break;
     case 'L': {
       ret.type = REQUEST_TYPE_LED;
       ret.r = Serial.read();
@@ -366,6 +351,7 @@ void setup() {
 static const unsigned int SEND_RATE_MILLIS = 10;
 void loop() {
   static unsigned long last_send_time = 0;
+  static int16_t sequence_number = 1;
   static struct MadgwickState state = {
     100, // sampleFreq
     0.1f, // beta
@@ -377,18 +363,8 @@ void loop() {
 
   struct sensors sensors;
 
-  mpu6000_read_sensors(&sensors);
-  hmc5883_read_sensors(&sensors);
-  madgwick_update(&state, &sensors);
-
   client_request request = serial_read_request();
   switch (request.type) {
-  case REQUEST_TYPE_NUMBER:
-    flex_read_sensors(&sensors);
-    serial_write_number(request.command_number); // 4 bytes
-    serial_write_sensors(sensors); // 36 bytes
-    serial_write_quaternion(state); // 10 bytes
-    // total write of 50 bytes
     break;
   case REQUEST_TYPE_LED:
     led_set_rgb(request.r, request.g, request.b);
@@ -397,5 +373,21 @@ void loop() {
     break;
   default:
     ; // !! ERROR! WTF!
+  }
+
+  mpu6000_read_sensors(&sensors);
+  hmc5883_read_sensors(&sensors);
+  madgwick_update(&state, &sensors);
+  flex_read_sensors(&sensors);
+
+  unsigned long current_time = millis();
+  if (SEND_RATE_MILLIS < current_time - last_send_time) {
+    serial_write_number(sequence_number); // 4 bytes
+    serial_write_sensors(sensors); // 36 bytes
+    serial_write_quaternion(state); // 10 bytes
+    // total write of 50 bytes
+
+    sequence_number++;
+    last_send_time = current_time;
   }
 }

@@ -31,6 +31,11 @@ t_CKINT glovechugin_data_offset = 0;
 
 #define MESSAGE_LENGTH 50
 
+// TODO, won't work when we want multiple Bluetooth devices!
+// doing this for now because Chuck_String->str seems to have
+// crazy corrupt garbage in it...
+const char * HARDCODED_DEVICE_PATH = "/dev/tty.usbserial-FTE3RR3T";
+
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
 // of one recommended approach)
@@ -47,11 +52,10 @@ public:
     {
     }
 
-    void connect(Chuck_String *deviceName) {
-        const char *path_str = deviceName->str.c_str();
-        std::cerr << "STRING " << deviceName << "/" << path_str << std::endl;
+    void connect(const char * path_str) {
+        std::cerr << "STRING " << path_str << std::endl;
 
-	int m_fd = open(path_str, O_RDWR | O_NOCTTY);
+	int m_fd = open(path_str, O_RDWR | O_NOCTTY | O_NDELAY);
 	if (m_fd < 0) {
             fprintf(stderr, "CANT OPEN PATH %s\n", path_str);
 	    return;
@@ -86,6 +90,7 @@ public:
 
 	// TODO TEMPORARY
 	usleep(1000*1000);
+	printf("Attempting read\n");
         size_t bytes_read = read(m_fd, m_reading_buffer, sizeof(m_reading_buffer));
 	printf("Read %lu bytes\n", bytes_read);
 
@@ -181,8 +186,13 @@ CK_DLL_DTOR(glovechugin_dtor)
 CK_DLL_MFUN(glovechugin_connect)
 {
     GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+
+    // TODO- why does deviceName->str point to garbage?
     Chuck_String * deviceName = GET_NEXT_STRING(ARGS);
-    bcdata->connect(deviceName);
+    printf("Got input device name %s\n", deviceName->str.c_str());
+
+    // bcdata->connect(deviceName->str.c_str());
+    bcdata->connect(HARDCODED_DEVICE_PATH);
 }
 
 CK_DLL_MFUN(glovechugin_close)

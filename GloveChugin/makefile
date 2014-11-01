@@ -9,7 +9,6 @@ CXX_MODULES=GloveChugin.cpp
 # where the chuck headers are
 CK_SRC_PATH?=../vendor/chuck/src
 
-
 # ---------------------------------------------------------------------------- #
 # you won't generally need to change anything below this line for a new chugin #
 # ---------------------------------------------------------------------------- #
@@ -72,6 +71,9 @@ ifneq ($(CHUCK_STRICT),)
 FLAGS+= -Werror
 endif
 
+
+# JRB, don't throw link errors if you can't find Chuck_Array4
+LDFLAGS+= -Wl,-undefined,dynamic_lookup
 
 
 # default: build a dynamic chugin

@@ -10,6 +10,7 @@
 // general includes
 #include <stdio.h>
 #include <limits.h>
+#include <pthread.h>
 
 #include <fcntl.h>
 #include <termios.h>
@@ -31,10 +32,21 @@ t_CKINT glovechugin_data_offset = 0;
 
 #define MESSAGE_LENGTH 50
 
+#define CHECKED_OP(op) {\
+    int code = (op);\
+    if (code) {\
+        fprintf(stderr, "ERROR IN " #op "\n");\
+	fprintf(stderr, "%s\n", strerror(code));	\
+        exit(1);\
+    }\
+}
+
 // TODO, won't work when we want multiple Bluetooth devices!
 // doing this for now because Chuck_String->str seems to have
 // crazy corrupt garbage in it...
 const char * HARDCODED_DEVICE_PATH = "/dev/tty.usbserial-FTE3RR3T";
+
+void reader_thread(void *glove_chugin);
 
 // class definition for internal Chugin data
 // (note: this isn't strictly necessary, but serves as example
@@ -43,76 +55,194 @@ class GloveChugin
 {
 public:
     // constructor
-    GloveChugin()
-    {
-	reading_offset = 0;
+    GloveChugin() {
+	m_running = false;
+	m_should_close = false;
+	pthread_mutex_init(&m_mutex, NULL);
     }
 
     ~GloveChugin()
     {
+	close();
+	pthread_mutex_destroy(&m_mutex);
     }
 
-    void connect(const char * path_str) {
-        std::cerr << "STRING " << path_str << std::endl;
+    // Interface to reading thread
 
-	int m_fd = open(path_str, O_RDWR | O_NOCTTY | O_NDELAY);
-	if (m_fd < 0) {
-            fprintf(stderr, "CANT OPEN PATH %s\n", path_str);
+    std::string t_getPath() {
+	return m_path;
+    }
+
+    unsigned char * t_getReadingBuffer() {
+	return m_reading_buffer;
+    }
+
+    void t_sendReadingBuffer() {
+	CHECKED_OP(pthread_mutex_lock(&m_mutex));
+
+	memcpy(m_ready_buffer, m_reading_buffer, MESSAGE_LENGTH);
+	m_message_ready = true;
+
+	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
+    }
+
+    bool t_shouldClose() {
+	bool ret;
+	CHECKED_OP(pthread_mutex_lock(&m_mutex));
+
+	ret = m_should_close;
+
+	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
+
+	return ret;
+    }
+
+    // Interface to ChucK code
+
+    void connect(std::string path) {
+	if (m_running) {
+	    fprintf(stderr, "Glove device is already open and running");
 	    return;
 	}
 
-	struct termios toptions;
-	tcgetattr(m_fd, &toptions);
-	cfsetispeed(&toptions, B115200);
-	cfsetospeed(&toptions, B115200);
+	m_path = path;
 
-	// 8 bits per character
-	toptions.c_cflag &= ~CSIZE;
-	toptions.c_cflag |= CS8;
-
-	toptions.c_cflag &= ~PARENB; // no parity
-	toptions.c_cflag &= ~CSTOPB; // one stop bit
-
-	toptions.c_cflag &= ~CRTSCTS; // No hardwre flow control
-	toptions.c_cflag |= CREAD; // Enable read
-	toptions.c_cflag |= CLOCAL; // ignore modem control lines
-
-	toptions.c_iflag &= ~(IXON | IXOFF | IXANY); // No flow control
-	toptions.c_iflag &= ~(ICANON | ECHO | ECHOE | ISIG); // No echo, not in canonical mode
-
-	toptions.c_oflag &= ~OPOST; // No output processing
-
-	toptions.c_cc[VMIN] = 24; // Buffer at least 24 characters before returning from read
-	toptions.c_cc[VTIME] = 1; // OR return from read after 0.1 second of silence
-
-	// Drop everything that has happened, start fresh
-	tcsetattr(m_fd, TCSAFLUSH, &toptions);
-
-	// TODO TEMPORARY
-	usleep(1000*1000);
-	printf("Attempting read\n");
-        size_t bytes_read = read(m_fd, m_reading_buffer, sizeof(m_reading_buffer));
-	printf("Read %lu bytes\n", bytes_read);
-
-        ::close(m_fd);
+	if (int create_err = pthread_create(&m_reader_thread, NULL, (void *(*) (void *))reader_thread, this)) {
+	    fprintf(stderr, "Can't create reader thread!");
+	    fprintf(stderr, "%s", strerror(create_err));
+	}
     }
 
     void close() {
-	;
+	CHECKED_OP(pthread_mutex_lock(&m_mutex));
+
+	m_should_close = true;
+
+	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
+
+	CHECKED_OP(pthread_join(m_reader_thread, NULL));
+	m_running = false; // ONLY AFTER join!
     }
 
     // fill array with message
     void getMessage(Chuck_Array4 *messageHolder) {
-	; // FILL THIS IN!
+	CHECKED_OP(pthread_mutex_lock(&m_mutex));
+
+	messageHolder->set_capacity(MESSAGE_LENGTH);
+	for (t_CKINT i = 0; i < MESSAGE_LENGTH; i++) {
+	    messageHolder->set(i, (t_CKUINT)m_ready_buffer[i]);
+	}
+
+	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
     }
     
 private:
-    // instance data
-    int m_fd;
+    bool m_running;
+    bool m_message_ready;
+    bool m_should_close;
+    std::string m_path;
+    pthread_t m_reader_thread;
+    pthread_mutex_t m_mutex;
     unsigned char m_reading_buffer[MESSAGE_LENGTH];
     unsigned char m_ready_buffer[MESSAGE_LENGTH];
-    size_t reading_offset;
 };
+
+
+void reader_thread(void *glove_chugin) {
+    unsigned char scratch_buffer[MESSAGE_LENGTH];
+    GloveChugin *bcdata = (GloveChugin *) glove_chugin;
+    std::string path = bcdata->t_getPath();
+    unsigned char *reading_buffer = bcdata->t_getReadingBuffer();
+
+    const char *path_str = path.c_str();
+
+    fprintf(stderr, "Attempting to open %s\n", path_str);
+
+    int fd = open(path_str, O_RDWR | O_NOCTTY | O_NDELAY);
+    if (fd < 0) {
+	fprintf(stderr, "Can't open path %s\n", path_str);
+	return;
+    }
+
+    struct termios toptions;
+    tcgetattr(fd, &toptions);
+    cfsetispeed(&toptions, B115200);
+    cfsetospeed(&toptions, B115200);
+
+    // 8 bits per character
+    toptions.c_cflag &= ~CSIZE;
+    toptions.c_cflag |= CS8;
+
+    toptions.c_cflag &= ~PARENB; // no parity
+    toptions.c_cflag &= ~CSTOPB; // one stop bit
+
+    toptions.c_cflag &= ~CRTSCTS; // No hardwre flow control
+    toptions.c_cflag |= CREAD; // Enable read
+    toptions.c_cflag |= CLOCAL; // ignore modem control lines
+
+    toptions.c_iflag &= ~(IXON | IXOFF | IXANY); // No flow control
+    toptions.c_iflag &= ~(ICANON | ECHO | ECHOE | ISIG); // No echo, not in canonical mode
+
+    toptions.c_oflag &= ~OPOST; // No output processing
+
+    toptions.c_cc[VMIN] = 24; // Buffer at least 24 characters before returning from read
+    toptions.c_cc[VTIME] = 1; // OR return from read after 0.1 second of silence
+
+    // Drop everything that has happened, start fresh
+    tcsetattr(fd, TCSAFLUSH, &toptions);
+
+    size_t reading_buffer_offset = 0;
+    while (!bcdata->t_shouldClose()) {
+	ssize_t bytes_read = read(fd, scratch_buffer, MESSAGE_LENGTH);
+	if (-1 == bytes_read) {
+	    if (errno == EAGAIN) {
+		usleep(10000);
+	    } else {
+		perror("can't read from device");
+		break;
+	    }
+	} else {
+	    size_t scratch_buffer_offset = 0;
+	    size_t read_length = bytes_read;
+
+	    if (reading_buffer_offset == 0) {
+		// Scan to the next 'N' and copy from there
+		size_t i;
+		for (i = 0; i < bytes_read && 'N' != scratch_buffer[i]; i++) {
+		    ;
+		}
+		scratch_buffer_offset = i;
+		read_length = read_length - i;
+	    }
+
+	    while (read_length > 0) {
+		size_t copy_length = read_length;
+		size_t message_space = MESSAGE_LENGTH - reading_buffer_offset;
+		if (copy_length > message_space) {
+		    copy_length = message_space;
+		}
+
+		memcpy(reading_buffer,
+		       scratch_buffer + scratch_buffer_offset,
+		       copy_length);
+
+		read_length -= copy_length;
+		scratch_buffer_offset += copy_length;
+		reading_buffer_offset += copy_length;
+
+		if (reading_buffer_offset == MESSAGE_LENGTH) {
+		    fprintf(stderr, "Writing message, Huzzah!\n");
+		    bcdata->t_sendReadingBuffer();
+		    reading_buffer_offset = 0;
+		}
+	    }
+	}
+    } // while not shouldclose
+
+    fprintf(stderr, "Closing serial connection\n");
+
+    ::close(fd);
+}
 
 
 // query function: chuck calls this when loading the Chugin

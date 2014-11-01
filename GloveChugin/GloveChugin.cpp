@@ -29,7 +29,31 @@ CK_DLL_DTOR(glovechugin_dtor);
 
 CK_DLL_MFUN(glovechugin_connect);
 CK_DLL_MFUN(glovechugin_close);
-CK_DLL_MFUN(glovechugin_getMessage);
+CK_DLL_MFUN(glovechugin_startMessage);
+
+CK_DLL_MFUN(glovechugin_messageNumber);
+CK_DLL_MFUN(glovechugin_finger1);
+CK_DLL_MFUN(glovechugin_finger2);
+CK_DLL_MFUN(glovechugin_finger3);
+CK_DLL_MFUN(glovechugin_finger4);
+CK_DLL_MFUN(glovechugin_finger5);
+
+CK_DLL_MFUN(glovechugin_accelX);
+CK_DLL_MFUN(glovechugin_accelY);
+CK_DLL_MFUN(glovechugin_accelZ);
+
+CK_DLL_MFUN(glovechugin_gyroX);
+CK_DLL_MFUN(glovechugin_gyroY);
+CK_DLL_MFUN(glovechugin_gyroZ);
+
+CK_DLL_MFUN(glovechugin_magX);
+CK_DLL_MFUN(glovechugin_magY);
+CK_DLL_MFUN(glovechugin_magZ);
+
+CK_DLL_MFUN(glovechugin_quaternion0);
+CK_DLL_MFUN(glovechugin_quaternion1);
+CK_DLL_MFUN(glovechugin_quaternion2);
+CK_DLL_MFUN(glovechugin_quaternion3);
 
 // this is a special offset reserved for Chugin internal data
 t_CKINT glovechugin_data_offset = 0;
@@ -63,6 +87,9 @@ public:
 	m_running = false;
 	m_should_close = false;
 	pthread_mutex_init(&m_mutex, NULL);
+
+	m_front_buffer = m_a_buffer;
+	m_back_buffer = m_b_buffer;
     }
 
     ~GloveChugin()
@@ -85,9 +112,8 @@ public:
 	CHECKED_OP(pthread_mutex_lock(&m_mutex));
 
 	if (checkMessage()) {
-	    // TODO consider swapping buffers rather than copying
-	    memcpy(m_ready_buffer, m_reading_buffer, MESSAGE_LENGTH);
-	    m_message_ready = true;
+	    memcpy(m_back_buffer, m_reading_buffer, MESSAGE_LENGTH);
+	    m_message_ready = TRUE;
 	}
 
 	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
@@ -156,28 +182,47 @@ public:
     }
 
     // fill array with message
-    void getMessage(Chuck_Array4 *messageHolder) {
+    int startMessage() {
 	CHECKED_OP(pthread_mutex_lock(&m_mutex));
 
-	for (int i = 0; i < MESSAGE_LENGTH; i++) {
-	    t_CKUINT value = (t_CKUINT)m_ready_buffer[i];
-	    messageHolder->set(i, value);
-	}
+	unsigned char * tmp = m_back_buffer;
+	m_back_buffer = m_front_buffer;
+	m_front_buffer = tmp;
+	int ret = m_message_ready ? 1 : 0;
 
 	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
+
+	return ret;
     }
     
+    int16_t getMessageInt(size_t offset) {
+	if (m_message_ready) {
+	    unsigned char high = m_front_buffer[offset];
+	    unsigned char low = m_front_buffer[offset + 1];
+	    return (high << 8 & 0xFF00) | (low & 0xFF);
+	} else {
+	    return 0;
+	}
+    }
+
 private:
+
     bool m_running;
     bool m_message_ready;
+
     bool m_should_close;
     std::string m_path;
+
     pthread_t m_reader_thread;
     pthread_mutex_t m_mutex;
-    unsigned char m_reading_buffer[MESSAGE_LENGTH];
-    unsigned char m_ready_buffer[MESSAGE_LENGTH];
-};
 
+    unsigned char * m_front_buffer;
+    unsigned char * m_back_buffer;
+
+    unsigned char m_reading_buffer[MESSAGE_LENGTH];
+    unsigned char m_a_buffer[MESSAGE_LENGTH];
+    unsigned char m_b_buffer[MESSAGE_LENGTH];
+};
 
 void reader_thread(void *glove_chugin) {
     unsigned char scratch_buffer[MESSAGE_LENGTH];
@@ -305,7 +350,32 @@ CK_DLL_QUERY( GloveChugin )
 
     QUERY->add_mfun(QUERY, glovechugin_close, "void", "close");
 
-    QUERY->add_mfun(QUERY, glovechugin_getMessage, "int[]", "getMessage");
+    QUERY->add_mfun(QUERY, glovechugin_startMessage, "int", "startMessage");
+
+    QUERY->add_mfun(QUERY, glovechugin_messageNumber, "int", "messageNumber");
+
+    QUERY->add_mfun(QUERY, glovechugin_finger1, "int", "finger1");
+    QUERY->add_mfun(QUERY, glovechugin_finger2, "int", "finger2");
+    QUERY->add_mfun(QUERY, glovechugin_finger3, "int", "finger3");
+    QUERY->add_mfun(QUERY, glovechugin_finger4, "int", "finger4");
+    QUERY->add_mfun(QUERY, glovechugin_finger5, "int", "finger5");
+
+    QUERY->add_mfun(QUERY, glovechugin_accelX, "int", "accelX");
+    QUERY->add_mfun(QUERY, glovechugin_accelY, "int", "accelY");
+    QUERY->add_mfun(QUERY, glovechugin_accelZ, "int", "accelZ");
+
+    QUERY->add_mfun(QUERY, glovechugin_gyroX, "int", "gyroX");
+    QUERY->add_mfun(QUERY, glovechugin_gyroY, "int", "gyroY");
+    QUERY->add_mfun(QUERY, glovechugin_gyroZ, "int", "gyroZ");
+
+    QUERY->add_mfun(QUERY, glovechugin_magX, "int", "magX");
+    QUERY->add_mfun(QUERY, glovechugin_magY, "int", "magY");
+    QUERY->add_mfun(QUERY, glovechugin_magZ, "int", "magZ");
+
+    QUERY->add_mfun(QUERY, glovechugin_quaternion0, "int", "quaternion0");
+    QUERY->add_mfun(QUERY, glovechugin_quaternion1, "int", "quaternion1");
+    QUERY->add_mfun(QUERY, glovechugin_quaternion2, "int", "quaternion2");
+    QUERY->add_mfun(QUERY, glovechugin_quaternion3, "int", "quaternion3");
     
     // this reserves a variable in the ChucK internal class to store 
     // referene to the c++ class we defined above
@@ -331,7 +401,6 @@ CK_DLL_CTOR(glovechugin_ctor)
     // store the pointer in the ChucK object member
     OBJ_MEMBER_INT(SELF, glovechugin_data_offset) = (t_CKINT) bcdata;
 }
-
 
 // implementation for the destructor
 CK_DLL_DTOR(glovechugin_dtor)
@@ -366,12 +435,104 @@ CK_DLL_MFUN(glovechugin_close)
     bcdata->close();
 }
 
-CK_DLL_MFUN(glovechugin_getMessage)
+CK_DLL_MFUN(glovechugin_startMessage)
 {
     GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
-    Chuck_Array4 * ret = new Chuck_Array4(FALSE, MESSAGE_LENGTH);
-    bcdata->getMessage(ret);
+    RETURN->v_int = bcdata->startMessage();
+}
 
-    fprintf(stderr, "Returning what I think is an array of ints, which is freed? Or otherwise goes goofy at some point?\n");
-    RETURN->v_object = ret;
+CK_DLL_MFUN(glovechugin_messageNumber)
+{
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(1);
+}
+
+CK_DLL_MFUN(glovechugin_finger1) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(5);
+}
+
+CK_DLL_MFUN(glovechugin_finger2) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(7);
+}
+
+CK_DLL_MFUN(glovechugin_finger3) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(9);
+}
+
+CK_DLL_MFUN(glovechugin_finger4) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(11);
+}
+
+CK_DLL_MFUN(glovechugin_finger5) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(13);
+}
+
+CK_DLL_MFUN(glovechugin_accelX) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(17);
+}
+
+CK_DLL_MFUN(glovechugin_accelY) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(19);
+}
+
+CK_DLL_MFUN(glovechugin_accelZ) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(21);
+}
+
+CK_DLL_MFUN(glovechugin_gyroX) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(25);
+}
+
+CK_DLL_MFUN(glovechugin_gyroY) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(27);
+}
+
+CK_DLL_MFUN(glovechugin_gyroZ) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(29);
+}
+
+CK_DLL_MFUN(glovechugin_magX) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(33);
+}
+
+CK_DLL_MFUN(glovechugin_magY) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(35);
+}
+
+CK_DLL_MFUN(glovechugin_magZ) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(37);
+}
+
+CK_DLL_MFUN(glovechugin_quaternion0) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(41);
+}
+
+CK_DLL_MFUN(glovechugin_quaternion1) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(43);
+}
+
+CK_DLL_MFUN(glovechugin_quaternion2) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(45);
+}
+
+CK_DLL_MFUN(glovechugin_quaternion3) {
+    GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
+    RETURN->v_int = bcdata->getMessageInt(47);
 }

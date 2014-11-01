@@ -69,10 +69,14 @@ t_CKINT glovechugin_data_offset = 0;
     }\
 }
 
-// TODO, won't work when we want multiple Bluetooth devices!
-// doing this for now because Chuck_String->str seems to have
+// Doing this for now because Chuck_String->str seems to have
 // crazy corrupt garbage in it...
-const char * HARDCODED_DEVICE_PATH = "/dev/tty.usbserial-FTE3RR3T";
+const char * HARDCODED_DEVICE_PATHS[] = {
+    "/dev/tty.usbserial-FTE3RR3T",
+    "/dev/tty.RNBT-C9F7-RNI-SPP"
+};
+
+const size_t HARDCODED_DEVICE_MAX = 1;
 
 void reader_thread(void *glove_chugin);
 
@@ -100,7 +104,7 @@ public:
 
     // Interface to reading thread
 
-    std::string t_getPath() {
+    const char * t_getPath() {
 	return m_path;
     }
 
@@ -132,7 +136,7 @@ public:
 
     // Interface to ChucK code
 
-    void connect(std::string path) {
+    void connect(const char * path) {
 	if (m_running) {
 	    fprintf(stderr, "Glove device is already open and running");
 	    return;
@@ -211,7 +215,7 @@ private:
     bool m_message_ready;
 
     bool m_should_close;
-    std::string m_path;
+    const char * m_path;
 
     pthread_t m_reader_thread;
     pthread_mutex_t m_mutex;
@@ -227,10 +231,9 @@ private:
 void reader_thread(void *glove_chugin) {
     unsigned char scratch_buffer[MESSAGE_LENGTH];
     GloveChugin *bcdata = (GloveChugin *) glove_chugin;
-    std::string path = bcdata->t_getPath();
     unsigned char *reading_buffer = bcdata->t_getReadingBuffer();
 
-    const char *path_str = path.c_str();
+    const char *path_str = bcdata->t_getPath();
 
     fprintf(stderr, "Attempting to open %s\n", path_str);
 
@@ -346,7 +349,7 @@ CK_DLL_QUERY( GloveChugin )
     QUERY->add_dtor(QUERY, glovechugin_dtor);
 
     QUERY->add_mfun(QUERY, glovechugin_connect, "void", "connect");
-    QUERY->add_arg(QUERY, "string", "devicePath");
+    QUERY->add_arg(QUERY, "int", "deviceIndex");
 
     QUERY->add_mfun(QUERY, glovechugin_close, "void", "close");
 
@@ -422,11 +425,18 @@ CK_DLL_MFUN(glovechugin_connect)
     GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
 
     // TODO- why does deviceName->str point to garbage?
-    Chuck_String * deviceName = GET_NEXT_STRING(ARGS);
-    printf("Got input device name %s\n", deviceName->str.c_str());
+    int deviceIndex = GET_NEXT_INT(ARGS);
+    if (deviceIndex < 0 || HARDCODED_DEVICE_MAX < deviceIndex) {
+	fprintf(stderr, "Can't connect to device index %d. Known devices are:\n", deviceIndex);
+	for (size_t i = 0; i < HARDCODED_DEVICE_MAX; i++) {
+	    fprintf(stderr, "   %lu: %s\n", i, HARDCODED_DEVICE_PATHS[i]);
+	}
+	return;
+    }
 
-    // bcdata->connect(deviceName->str.c_str());
-    bcdata->connect(HARDCODED_DEVICE_PATH);
+    const char * deviceName = HARDCODED_DEVICE_PATHS[deviceIndex];
+    printf("Got input device name %s\n", deviceName);
+    bcdata->connect(deviceName);
 }
 
 CK_DLL_MFUN(glovechugin_close)

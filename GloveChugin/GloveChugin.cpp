@@ -7,6 +7,10 @@
 #include "chuck_dl.h"
 #include "chuck_def.h"
 
+// This could be broken
+#include "chuck_type.h"
+#include "chuck_instr.h"
+
 // general includes
 #include <stdio.h>
 #include <limits.h>
@@ -36,7 +40,7 @@ t_CKINT glovechugin_data_offset = 0;
     int code = (op);\
     if (code) {\
         fprintf(stderr, "ERROR IN " #op "\n");\
-	fprintf(stderr, "%s\n", strerror(code));	\
+	fprintf(stderr, "%s\n", strerror(code));\
         exit(1);\
     }\
 }
@@ -80,8 +84,11 @@ public:
     void t_sendReadingBuffer() {
 	CHECKED_OP(pthread_mutex_lock(&m_mutex));
 
-	memcpy(m_ready_buffer, m_reading_buffer, MESSAGE_LENGTH);
-	m_message_ready = true;
+	if (checkMessage()) {
+	    // TODO consider swapping buffers rather than copying
+	    memcpy(m_ready_buffer, m_reading_buffer, MESSAGE_LENGTH);
+	    m_message_ready = true;
+	}
 
 	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
     }
@@ -124,13 +131,37 @@ public:
 	m_running = false; // ONLY AFTER join!
     }
 
+    bool checkMessage() {
+	if ('N' != m_reading_buffer[0]) {
+	    fprintf(stderr, "Message has bad header (No N)\n");
+	    return FALSE;
+	} else if ('H' != m_reading_buffer[4]) {
+	    fprintf(stderr, "Message has bad header (No H)\n");
+	    return FALSE;
+	} else if ('A' != m_reading_buffer[16]) {
+	    fprintf(stderr, "Message has bad header (No A)\n");
+	    return FALSE;
+	} else if ('G' != m_reading_buffer[24]) {
+	    fprintf(stderr, "Message has bad header (No G)\n");
+	    return FALSE;
+	} else if ('M' != m_reading_buffer[32]) {
+	    fprintf(stderr, "Message has bad header (No G)\n");
+	    return FALSE;
+	} else if ('Q' != m_reading_buffer[40]) {
+	    fprintf(stderr, "Message has bad header (No Q)\n");
+	    return FALSE;
+	}
+
+	return TRUE;
+    }
+
     // fill array with message
     void getMessage(Chuck_Array4 *messageHolder) {
 	CHECKED_OP(pthread_mutex_lock(&m_mutex));
 
-	messageHolder->set_capacity(MESSAGE_LENGTH);
-	for (t_CKINT i = 0; i < MESSAGE_LENGTH; i++) {
-	    messageHolder->set(i, (t_CKUINT)m_ready_buffer[i]);
+	for (int i = 0; i < MESSAGE_LENGTH; i++) {
+	    t_CKUINT value = (t_CKUINT)m_ready_buffer[i];
+	    messageHolder->set(i, value);
 	}
 
 	CHECKED_OP(pthread_mutex_unlock(&m_mutex));
@@ -196,7 +227,7 @@ void reader_thread(void *glove_chugin) {
 	ssize_t bytes_read = read(fd, scratch_buffer, MESSAGE_LENGTH);
 	if (-1 == bytes_read) {
 	    if (errno == EAGAIN) {
-		usleep(10000);
+		usleep(10000); // TODO is this needed?
 	    } else {
 		perror("can't read from device");
 		break;
@@ -213,6 +244,13 @@ void reader_thread(void *glove_chugin) {
 		}
 		scratch_buffer_offset = i;
 		read_length = read_length - i;
+
+		assert(0 == reading_buffer_offset);
+		if (i == bytes_read) {
+		    assert(0 == read_length);
+		} else {
+		    assert('N' == scratch_buffer[i]);
+		}
 	    }
 
 	    while (read_length > 0) {
@@ -222,7 +260,7 @@ void reader_thread(void *glove_chugin) {
 		    copy_length = message_space;
 		}
 
-		memcpy(reading_buffer,
+		memcpy(reading_buffer + reading_buffer_offset,
 		       scratch_buffer + scratch_buffer_offset,
 		       copy_length);
 
@@ -231,9 +269,9 @@ void reader_thread(void *glove_chugin) {
 		reading_buffer_offset += copy_length;
 
 		if (reading_buffer_offset == MESSAGE_LENGTH) {
-		    fprintf(stderr, "Writing message, Huzzah!\n");
 		    bcdata->t_sendReadingBuffer();
 		    reading_buffer_offset = 0;
+		    read_length = 0;
 		}
 	    }
 	}
@@ -267,10 +305,7 @@ CK_DLL_QUERY( GloveChugin )
 
     QUERY->add_mfun(QUERY, glovechugin_close, "void", "close");
 
-    // example of adding setter method
-    QUERY->add_mfun(QUERY, glovechugin_getMessage, "void", "getMessage");
-    // example of adding argument to the above method
-    QUERY->add_arg(QUERY, "int[]", "arg");
+    QUERY->add_mfun(QUERY, glovechugin_getMessage, "int[]", "getMessage");
     
     // this reserves a variable in the ChucK internal class to store 
     // referene to the c++ class we defined above
@@ -334,6 +369,9 @@ CK_DLL_MFUN(glovechugin_close)
 CK_DLL_MFUN(glovechugin_getMessage)
 {
     GloveChugin * bcdata = (GloveChugin *) OBJ_MEMBER_INT(SELF, glovechugin_data_offset);
-    Chuck_Array4 * outArray = (Chuck_Array4 *) GET_NEXT_OBJECT(ARGS);
-    bcdata->getMessage(outArray);
+    Chuck_Array4 * ret = new Chuck_Array4(FALSE, MESSAGE_LENGTH);
+    bcdata->getMessage(ret);
+
+    fprintf(stderr, "Returning what I think is an array of ints, which is freed? Or otherwise goes goofy at some point?\n");
+    RETURN->v_object = ret;
 }

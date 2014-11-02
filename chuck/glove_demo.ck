@@ -36,7 +36,7 @@ while(true)
 	Math.sqrt((accelY * accelY) + (accelZ * accelZ)) => float accelYZHyp;
 
 	Math.atan2(accelX, accelY) => float bank;
-	Math.atan2(-accelX, accelYZHyp) => float attitude; // THIS IS SCREWY?
+	Math.atan2(-accelX, accelYZHyp) => float attitude;
 
 	Math.sin(bank) => float sin_bank;
 	Math.cos(bank) => float cos_bank;

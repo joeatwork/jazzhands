@@ -54,7 +54,7 @@ public class GloveStatus
 Event update @=> GloveStatus.update;
 GloveChugin glove;
 
-glove.connect(1); // TODO CALLER NEEDS TO PICK
+glove.connect(0); // TODO CALLER NEEDS TO PICK
 
 while(true)
 {
@@ -91,7 +91,6 @@ while(true)
 
 	10::ms => now;
     } else {
-	<<< "NOT READY" >>>;
 	1::second => now;
     }
 }

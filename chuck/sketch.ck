@@ -16,9 +16,8 @@ class Track
 
     fun void connect() {
 	10::second => recorder.duration;
-	64 => recorder.maxVoices;
 	adc => recorder => dac;
-
+	64 => recorder.maxVoices;
 	1.0 => grainStretch;
     }
 
@@ -31,53 +30,53 @@ class Track
 	0 => recorder.record;
 	<<< "Recording stop" >>>;
 
-	now - startRecording => dur totalSample;
-	totalSample / recorder.maxVoices() => dur grainDuration;
+	now - startRecording => totalSample;
+	totalSample / recorder.maxVoices() => grainDuration;
     }
 
     fun void playBack() { // BLOCKING
-	for (0 => int voiceNum; voiceNum < recorder.maxVoices(); voiceNum++) {
-	    spork ~ playgrain(voiceNum);
-	    voiceNum + 1 => voiceNum;
-	}
-	totalSample => now;
-    }
-
-    fun void playgrain(int voiceNum) {
-	// voiceNum could be REVERSED with negative stretch,
-
-	int grainIndex;
-	if (grainStretch < 0.0) {
-	    recorder.maxVoices() - voiceNum => grainIndex;
-	} else {
-	    voiceNum => grainIndex;
+	now => time t0;
+	for (0 => int i; i < recorder.maxVoices(); i++) {
+	    spork ~ playGrain(i, t0);
 	}
 
-	<<< "voice ", voiceNum, " index ", grainIndex >>>;
+	60::second => now; // TODO ???? SHOULD BE AN EVENT
+    }
 
-	Std.fabs(grainStretch) => float stretchSize;
-	grainDuration * grainIndex => dur grainOffset;
-	grainDuration * voiceNum * stretchSize => dur pauseBefore;
+    fun void playGrain(int voiceNumber, time t0) {
+	while (true) {
+	    now => time loopStart;
 
-	pauseBefore => now;
-	recorder.getVoice() => int voice;
-	recorder.playPos(voice, grainOffset);
-	recorder.rampUp(voice, 20::ms);
-	recorder.play(voice, 1);
-	grainDuration - 20::ms => now; // TODO DOESNT WORK
-	recorder.rampDown(voice, 20::ms);
-	20::ms => now;
+	    // STRETCH BEHAVIORS
+	    // At ZERO, All play at once
+	    // At 1.0, All play in ordinary
+	    // At -1.0 All play in REVERSE
+
+	    // grainOffset, grainDuration, voiceNumber are CONSTANT
+
+	    totalSample * grainStretch => dur stretchedDuration;
+	    (loopStart - t0) % stretchedDuration => dur deltaT;
+	    deltaT / stretchedDuration => float partOfSample;
+	    while (partOfSample < 0) {
+		1.0 + partOfSample => partOfSample;
+	    }
+
+	    (partOfSample * recorder.maxVoices()) $ int => int grainIndex;
+	    grainDuration * grainIndex => dur grainOffset;
+
+	    if (grainIndex == voiceNumber) {
+		recorder.playPos(voiceNumber, grainOffset);
+		recorder.rampUp(voiceNumber, 20::ms);
+		recorder.play(voiceNumber, 1);
+		grainDuration - 20::ms => now;
+		recorder.rampDown(voiceNumber, 20::ms);
+		20::ms => now;
+	    } else {
+		10::ms => now;
+	    }
+	}
     }
 }
-
-// Too long on purpose. When we're using serial events to start and stop recording,
-// we'll need the extra capacity.
-
-until (GloveStatus.ready) {
-    <<< "Waiting for glove" >>>;
-    1::second => now;
-}
-<<< "Glove ready" >>>;
 
 Track track1;
 Track track2;
@@ -87,8 +86,47 @@ track1.connect();
 track2.connect();
 track3.connect();
 
-<<< "Glove is ready!" >>>;
+// TEMPORARY - Keyboard is easier
+// Hid hid;
+// HidMsg keyMsg;
+// 
+// if (!hid.openKeyboard(0)) {
+//     <<< "Can't access keyboard." >>>;
+//     me.exit();
+// }
+// 
+// while (true) {
+//     hid => now;
+//     while (hid.recv(keyMsg)) {
+// 	if (keyMsg.isButtonDown() && keyMsg.which == 44) {
+// 	    track1.record();
+// 	    spork ~ track1.playBack();
+// 	} else if (keyMsg.which == 20) {
+// 	    track1.grainStretch - 0.1 => track1.grainStretch;
+// 	    <<< "Grain stretch ", track1.grainStretch >>>;
+// 	} else if (keyMsg.which == 26) {
+// 	    track1.grainStretch + 0.1 => track1.grainStretch;
+// 	    <<< "Grain stretch ", track1.grainStretch >>>;
+// 	}
+//     }
+// }
+
+// ACTUAL GLOVE STUFF
+
+until (GloveStatus.ready) {
+    1::second => now;
+}
+<<< "Glove ready" >>>;
 Math.PI/2.0 => float stretchScale;
+
+fun void grainTrack1() {
+    while (true) {
+	GloveStatus.update => now;
+	1.0 + (stretchScale * GloveStatus.attitude) => track1.grainStretch;
+    }
+}
+
+spork ~ grainTrack1();
 
 // Finger thresholds?
 382 => int finger1_thresh;
@@ -117,17 +155,14 @@ while(true) {
 	1 => ring_down;
     }
 
-    if (middle_down && ring_down && !(thumb_closed && index_down)) {
-	<<< "RECORDING" >>>;
-	track1.record();
-
-	<<< "PLAYBACK" >>>;
-	track1.playBack();
-
-	<<< "FINISHED PLAYBACK" >>>;
-    }
-
-    // 1.0 + (stretchScale * GloveStatus.attitude) => grainStretch;
-    <<< "FINGERS ", GloveStatus.finger1, GloveStatus.finger2, GloveStatus.finger3, GloveStatus.finger4, GloveStatus.finger5 >>>;
+//    if (middle_down && ring_down && !(thumb_closed && index_down)) {
+//	<<< "RECORDING" >>>;
+//	track1.record();
+//
+//	<<< "PLAYBACK" >>>;
+//	track1.playBack();
+//
+//	<<< "FINISHED PLAYBACK" >>>;
+//    }
 }
 

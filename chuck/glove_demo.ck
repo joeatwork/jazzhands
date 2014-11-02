@@ -5,6 +5,8 @@ glove.connect(0);
 
 while(true)
 {
+
+    2::second  => now;
     if (glove.startMessage()) {
 	glove.messageNumber() => int messageNumber;
 
@@ -31,11 +33,24 @@ while(true)
 	glove.quaternion2() => int q2;
 	glove.quaternion3() => int q3;
 
-	<<< "MESSAGE NUMBER ", messageNumber >>>;
-	<<< "FINGERS ", finger1, finger2, finger3, finger4, finger5 >>>;
-	<<< "ACCEL ", accelX, accelY, accelZ >>>;
-	<<< "GYRO ", gyroX, gyroY, gyroZ >>>;
-	<<< "QUATERNION ", q0, q1, q2, q3  >>>;
+	Math.sqrt((accelY * accelY) + (accelZ * accelZ)) => float accelYZHyp;
+
+	Math.atan2(accelX, accelY) => float bank;
+	Math.atan2(-accelX, accelYZHyp) => float attitude; // THIS IS SCREWY?
+
+	Math.sin(bank) => float sin_bank;
+	Math.cos(bank) => float cos_bank;
+	Math.sin(attitude) => float sin_attitude;
+	Math.cos(attitude) => float cos_attitude;
+
+	Math.atan2(magZ * sin_bank - magY * cos_bank,
+		   (magX * cos_attitude) + (magY * sin_attitude * sin_bank) + (magZ * sin_attitude * cos_bank)) => float heading;
+
+	<<< "MESSAGE NUMBER ", messageNumber, bank, attitude, heading >>>;
+        <<< "FINGERS ", finger1, finger2, finger3, finger4, finger5 >>>;
+	// <<< "ACCEL ", accelX, accelY, accelZ >>>;
+	// <<< "GYRO ", gyroX, gyroY, gyroZ >>>;
+	// <<< "QUATERNION ", q0, q1, q2, q3  >>>;
     } else {
 	<<< "NOT READY" >>>;
     }

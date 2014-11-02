@@ -163,22 +163,22 @@ public:
 
     bool checkMessage() {
 	if ('N' != m_reading_buffer[0]) {
-	    fprintf(stderr, "Message has bad header (No N)\n");
+	    // fprintf(stderr, "Message has bad header (No N)\n");
 	    return FALSE;
 	} else if ('H' != m_reading_buffer[4]) {
-	    fprintf(stderr, "Message has bad header (No H)\n");
+	    // fprintf(stderr, "Message has bad header (No H)\n");
 	    return FALSE;
 	} else if ('A' != m_reading_buffer[16]) {
-	    fprintf(stderr, "Message has bad header (No A)\n");
+	    // fprintf(stderr, "Message has bad header (No A)\n");
 	    return FALSE;
 	} else if ('G' != m_reading_buffer[24]) {
-	    fprintf(stderr, "Message has bad header (No G)\n");
+	    // fprintf(stderr, "Message has bad header (No G)\n");
 	    return FALSE;
 	} else if ('M' != m_reading_buffer[32]) {
-	    fprintf(stderr, "Message has bad header (No G)\n");
+	    // fprintf(stderr, "Message has bad header (No G)\n");
 	    return FALSE;
 	} else if ('Q' != m_reading_buffer[40]) {
-	    fprintf(stderr, "Message has bad header (No Q)\n");
+	    // fprintf(stderr, "Message has bad header (No Q)\n");
 	    return FALSE;
 	}
 
@@ -189,6 +189,10 @@ public:
     int startMessage() {
 	CHECKED_OP(pthread_mutex_lock(&m_mutex));
 
+	// TODO- if the device goes away or goes screwy, this
+	// will oscillate between the last two good messages,
+	// or maybe an old message and crazy garbage if we've
+	// only ever written one good buffer.
 	unsigned char * tmp = m_back_buffer;
 	m_back_buffer = m_front_buffer;
 	m_front_buffer = tmp;

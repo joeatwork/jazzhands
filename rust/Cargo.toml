@@ -1,0 +1,9 @@
+[package]
+
+name = "glove_driver"
+version = "0.0.1"
+authors = [ "Joe <joerbowers+rust@gmail.com>" ]
+
+[[bin]]
+
+name = "glove_driver"

@@ -2,9 +2,10 @@
 
 extern crate libc;
 
-use libc::{c_int, c_ulong, c_uchar};
+use libc::{c_int, c_ulong, c_uchar, c_void, size_t};
+
 use std::default::{Default};
-use std::io::IoError;
+use std::io::{IoError};
 use std::os;
 
 #[allow(non_camel_case_types)] type tcflag_t = libc::c_ulong;
@@ -93,7 +94,11 @@ extern {
     fn tcsetattr(fd: c_int, optional_actions: c_int, termios: *const Termios) -> c_int;
 }
 
+const MESSAGE_LENGTH: uint = 50;
+
 fn run_reader(device: Path) -> Result<(), IoError> {
+    let mut scratch_buffer = [0u8, ..MESSAGE_LENGTH];
+
     let flags = libc::O_RDWR | O_NOCTTY | O_NDELAY;
     let fd_option = device.with_c_str(|path_str| unsafe {
         libc::open(path_str, flags, 0)
@@ -134,8 +139,24 @@ fn run_reader(device: Path) -> Result<(), IoError> {
         checked_c_io!(tcsetattr(fd, TCSAFLUSH, &toptions));
     }
 
-    unsafe {
-        libc::close(fd);
+    // TODO: There is very likely a much more rusty way to deal with this
+    loop {
+        let bytes = unsafe {
+            let len = scratch_buffer.len() as size_t;
+            let bytes = libc::read(fd, scratch_buffer.as_mut_ptr() as *mut c_void, len);
+            if -1 == bytes {
+                let err = os::errno();
+                if err == libc::EAGAIN as uint {
+                    continue;
+                } else {
+                    return Err(IoError::last_error());
+                }
+            }
+
+            bytes
+        };
+        println!("Read {} bytes ok!", bytes);
+        break;
     }
 
     Ok(())

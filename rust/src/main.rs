@@ -5,7 +5,9 @@ extern crate libc;
 use libc::{c_int, c_ulong, c_uchar, c_void, size_t};
 
 use std::default::{Default};
+use std::fmt::{Show, Formatter, FormatError};
 use std::io::{IoError};
+use std::iter::{range};
 use std::os;
 
 #[allow(non_camel_case_types)] type tcflag_t = libc::c_ulong;
@@ -96,9 +98,90 @@ extern {
 
 const MESSAGE_LENGTH: uint = 50;
 
-fn run_reader(device: Path) -> Result<(), IoError> {
-    let mut scratch_buffer = [0u8, ..MESSAGE_LENGTH];
+fn read_i16(message:&[u8, ..MESSAGE_LENGTH], offset: uint) -> i16 {
+    let high = message[offset] as i16;
+    let low = message[offset + 1] as i16;
+    (high as i16 << 8) | (low as i16 & 0x00FFi16)
+}
 
+struct Message {
+    serialno: i16,
+    fingers: [i16, ..5],
+    accel: [i16, ..3],
+    gyro: [i16, ..3],
+    mag: [i16, ..3],
+}
+
+impl Show for Message {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), FormatError> {
+        write!(
+            f,
+            "Message {} [fingers {} {} {} {} {}] [accel {} {} {}] [gyro {} {} {}] [mag {} {} {}]",
+            self.serialno,
+            self.fingers[0], self.fingers[1], self.fingers[2], self.fingers[3], self.fingers[4],
+            self.accel[0], self.accel[1], self.accel[2],
+            self.gyro[0], self.gyro[1], self.gyro[2],
+            self.mag[0], self.mag[1], self.mag[2]
+        )
+    }
+}
+
+fn check_message(message:&[u8, ..MESSAGE_LENGTH]) -> bool {
+    if 'N' as u8 != message[0] {
+	println!("Message has bad header (No N)");
+        false
+    } else if 'H' as u8 != message[4] {
+	println!("Message has bad header (No H)");
+        false
+    } else if 'A' as u8 != message[16] {
+	println!("Message has bad header (No A)");
+	false
+    } else if 'G' as u8 != message[24] {
+	println!("Message has bad header (No G)");
+        false
+    } else if 'M' as u8 != message[32] {
+	println!("Message has bad header (No M)");
+        false
+    } else if 'Q' as u8 != message[40] {
+	println!("Message has bad header (No Q)");
+        false
+    } else {
+        true
+    }
+}
+
+fn parse_message(m:&[u8, ..MESSAGE_LENGTH]) -> Option<Message> {
+    match check_message(m) {
+        false => None,
+        true => Some(Message {
+            serialno: read_i16(m, 1),
+            fingers: [
+                read_i16(m, 5),
+                read_i16(m, 7),
+                read_i16(m, 9),
+                read_i16(m, 11),
+                read_i16(m, 13)
+            ],
+            accel: [
+                read_i16(m, 17),
+                read_i16(m, 19),
+                read_i16(m, 21),
+            ],
+            gyro: [
+                read_i16(m, 25),
+                read_i16(m, 27),
+                read_i16(m, 29),
+            ],
+            mag: [
+                read_i16(m, 33),
+                read_i16(m, 35),
+                read_i16(m, 37),
+            ],
+        }),
+    }
+}
+
+fn run_reader(device: Path) -> Result<(), IoError> {
     let flags = libc::O_RDWR | O_NOCTTY | O_NDELAY;
     let fd_option = device.with_c_str(|path_str| unsafe {
         libc::open(path_str, flags, 0)
@@ -139,11 +222,14 @@ fn run_reader(device: Path) -> Result<(), IoError> {
         checked_c_io!(tcsetattr(fd, TCSAFLUSH, &toptions));
     }
 
-    // TODO: There is very likely a much more rusty way to deal with this
+    let mut reading_buffer = [0u8, ..MESSAGE_LENGTH];
+    let mut message_buffer = [0u8, ..MESSAGE_LENGTH];
+    let mut message_buffer_offset = 0;
+    let mut messages = 0u;
     loop {
-        let bytes = unsafe {
-            let len = scratch_buffer.len() as size_t;
-            let bytes = libc::read(fd, scratch_buffer.as_mut_ptr() as *mut c_void, len);
+        let read_end = unsafe {
+            let len = reading_buffer.len() as size_t;
+            let bytes = libc::read(fd, reading_buffer.as_mut_ptr() as *mut c_void, len);
             if -1 == bytes {
                 let err = os::errno();
                 if err == libc::EAGAIN as uint {
@@ -153,11 +239,42 @@ fn run_reader(device: Path) -> Result<(), IoError> {
                 }
             }
 
-            bytes
+            bytes as uint
         };
-        println!("Read {} bytes ok!", bytes);
-        break;
-    }
+
+        if read_end == 0 {
+            continue;
+        }
+
+        let mut reading_buffer_offset = 0;
+
+        // We're (possibly) not yet in sync with messages
+        if 0 == message_buffer_offset {
+            while 'N' as u8 != reading_buffer[reading_buffer_offset] &&
+                reading_buffer_offset < read_end {
+                reading_buffer_offset = reading_buffer_offset + 1;
+            }
+
+            println!("skipped {} bytes", reading_buffer_offset);
+        }
+
+        // message from reading_buffer_offset to read_end
+        for i in range(reading_buffer_offset, read_end) {
+            message_buffer[message_buffer_offset] = reading_buffer[i];
+            message_buffer_offset = message_buffer_offset + 1;
+            if message_buffer.len() == message_buffer_offset {
+                let message = parse_message(&message_buffer);
+                println!("Message {}", message);
+                message_buffer_offset = 0;
+                messages = messages + 1;
+            }
+        }
+
+        if messages > 10 {
+            println!("Read 10 messages");
+            break;
+        }
+    } // loop
 
     Ok(())
 }

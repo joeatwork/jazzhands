@@ -79,9 +79,12 @@ const SUCCEEDED: c_int = 0;
 
 // Calls a c function
 macro_rules! checked_c_io(
-    ($call:expr) => (
+    ($fd:expr, $call:expr) => (
         match $call {
-            FAILED => return Err(IoError::last_error()),
+            FAILED => {
+                libc::close($fd);
+                return Err(IoError::last_error())
+            }
             SUCCEEDED => (),
             _ => unreachable!(),
         }
@@ -181,7 +184,7 @@ fn parse_message(m:&[u8, ..MESSAGE_LENGTH]) -> Option<Message> {
     }
 }
 
-fn run_reader(device: Path) -> Result<(), IoError> {
+fn open_device(device: Path) -> Result<libc::c_int, IoError> {
     let flags = libc::O_RDWR | O_NOCTTY | O_NDELAY;
     let fd_option = device.with_c_str(|path_str| unsafe {
         libc::open(path_str, flags, 0)
@@ -193,9 +196,9 @@ fn run_reader(device: Path) -> Result<(), IoError> {
 
     let mut toptions: Termios = Default::default();
     unsafe {
-        checked_c_io!(tcgetattr(fd, &mut toptions));
-        checked_c_io!(cfsetispeed(&mut toptions, B115200));
-        checked_c_io!(cfsetospeed(&mut toptions, B115200));
+        checked_c_io!(fd, tcgetattr(fd, &mut toptions));
+        checked_c_io!(fd, cfsetispeed(&mut toptions, B115200));
+        checked_c_io!(fd, cfsetospeed(&mut toptions, B115200));
     }
 
     // 8 bits per character
@@ -219,13 +222,24 @@ fn run_reader(device: Path) -> Result<(), IoError> {
 
     unsafe {
         // Drop everything that has happened, start fresh
-        checked_c_io!(tcsetattr(fd, TCSAFLUSH, &toptions));
+        checked_c_io!(fd, tcsetattr(fd, TCSAFLUSH, &toptions));
     }
+
+    Ok(fd)
+}
+
+fn run_reader(device: Path) -> Result<(), IoError> {
+    let fd = match open_device(device) {
+        Err(x) => return Err(x),
+        Ok(fd) => fd
+    };
 
     let mut reading_buffer = [0u8, ..MESSAGE_LENGTH];
     let mut message_buffer = [0u8, ..MESSAGE_LENGTH];
     let mut message_buffer_offset = 0;
-    let mut messages = 0u;
+    let mut skipped_bytes = 0u;
+    let mut messages_read = 0u;
+    let mut messages_failed = 0u;
     loop {
         let read_end = unsafe {
             let len = reading_buffer.len() as size_t;
@@ -253,9 +267,8 @@ fn run_reader(device: Path) -> Result<(), IoError> {
             while 'N' as u8 != reading_buffer[reading_buffer_offset] &&
                 reading_buffer_offset < read_end {
                 reading_buffer_offset = reading_buffer_offset + 1;
+                skipped_bytes = skipped_bytes + 1;
             }
-
-            println!("skipped {} bytes", reading_buffer_offset);
         }
 
         // message from reading_buffer_offset to read_end
@@ -264,17 +277,24 @@ fn run_reader(device: Path) -> Result<(), IoError> {
             message_buffer_offset = message_buffer_offset + 1;
             if message_buffer.len() == message_buffer_offset {
                 let message = parse_message(&message_buffer);
-                println!("Message {}", message);
+                match message {
+                    Some(_) => messages_read = messages_read + 1,
+                    None => messages_failed = messages_failed + 1,
+                }
                 message_buffer_offset = 0;
-                messages = messages + 1;
             }
         }
 
-        if messages > 10 {
-            println!("Read 10 messages");
+        if messages_read + messages_failed >= 1000 {
+            println!("Read {}/{} messages", messages_read, messages_failed);
+            println!("    (dropped {} bytes on the floor)", skipped_bytes);
             break;
         }
     } // loop
+
+    unsafe {
+        libc::close(fd);
+    }
 
     Ok(())
 }

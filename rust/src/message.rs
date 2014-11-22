@@ -1,6 +1,6 @@
 use std::fmt::{Show, Formatter, FormatError};
 
-pub struct Message {
+pub struct GloveState {
     pub serialno: i16,
     pub fingers: [i16, ..5],
     pub accel: [i16, ..3],
@@ -8,11 +8,11 @@ pub struct Message {
     pub mag: [i16, ..3],
 }
 
-impl Show for Message {
+impl Show for GloveState {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FormatError> {
         write!(
             f,
-            "Message {} [fingers {} {} {} {} {}] [accel {} {} {}] [gyro {} {} {}] [mag {} {} {}]",
+            "GloveState {} [fingers {} {} {} {} {}] [accel {} {} {}] [gyro {} {} {}] [mag {} {} {}]",
             self.serialno,
             self.fingers[0], self.fingers[1], self.fingers[2], self.fingers[3], self.fingers[4],
             self.accel[0], self.accel[1], self.accel[2],

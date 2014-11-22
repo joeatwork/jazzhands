@@ -9,7 +9,7 @@ use std::os;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicOption, Release};
 
-use super::message::{Message};
+use super::message::{GloveState};
 
 #[allow(non_camel_case_types)] type tcflag_t = libc::c_ulong;
 #[allow(non_camel_case_types)] type speed_t = libc::c_ulong;
@@ -127,10 +127,10 @@ fn check_message(message:&[u8, ..MESSAGE_LENGTH]) -> bool {
 }
 
 
-fn parse_message(m:&[u8, ..MESSAGE_LENGTH]) -> Option<Message> {
+fn parse_message(m:&[u8, ..MESSAGE_LENGTH]) -> Option<GloveState> {
     match check_message(m) {
         false => None,
-        true => Some(Message {
+        true => Some(GloveState {
             serialno: read_i16(m, 1),
             fingers: [
                 read_i16(m, 5),
@@ -202,7 +202,7 @@ fn open_device(device: Path) -> Result<libc::c_int, IoError> {
     Ok(fd)
 }
 
-pub fn run_reader(device: Path, output: Arc<AtomicOption<Message>>) -> Result<(), IoError> {
+pub fn run_reader(device: Path, output: Arc<AtomicOption<GloveState>>) -> Result<(), IoError> {
     let fd = match open_device(device) {
         Err(x) => return Err(x),
         Ok(fd) => fd
